@@ -14,28 +14,43 @@ Created on Thu Oct 26 13:06:30 2023
 import numpy as np
 import networkx as nx
 from copy import deepcopy
-from scipy.integrate import odeint
+from scipy.integrate import odeint, solve_ivp
 from sklearn.neighbors import KernelDensity
 from matplotlib import pyplot as plt
-from scipy.linalg import schur,expm
+from scipy.linalg import schur, expm
 from scipy.spatial.distance import pdist
 from tqdm import tqdm
 
+"""
+
+This is a simulation toolkit for networked dynamical systems. It builds a graph, puts an oscillator or dynamical system
+on each node, couples neighboring nodes through the graph Laplacian, numerically integrates the resulting ODE system,
+and sometimes measures how long the nodes take to synchronize
+
+Laplacian dynamics refer to linear, diffusion driven processes modeled by a graph or spatial
+Laplacian matrix. Non-Laplacian dynamics describe linear, advection (?)-heavy, or externally driven systems
+where local gradients and symmetric diffusion fail to capture the full evolution
+
+- Advection: transport of substance/physical property via the bulk motion of fluid
+- Diffusion: spreading out of a substance/property due to random particle motion
+
+"""
+""""""
 
 class non_laplacian_dynamics:
     def __init__(self):
         self.graph = None
         self.init_cond = None
-    def set_graph(self,G):
+    def set_graph(self, G):
         """A function to set the graph. Note it is assumed to be a networkx graph...
         
         Inputs: G - a networkx graph.
         """
         self.graph = G
     
-    def set_init_cond(self,init_cond):
+    def set_init_cond(self, init_cond):
         """For setting a particular initial condition"""
-        self.init_cond=init_cond
+        self.init_cond = init_cond
 
     def return_graph(self):
         return self.graph
@@ -43,13 +58,13 @@ class non_laplacian_dynamics:
     def return_init_cond(self):
         return self.init_cond
 
-    def convert_adjacency(self,A,Type='DiGraph'):
+    def convert_adjacency(self, A, Type = 'DiGraph'):
         """To convert an adacency matrix to a networkx graph and store the graph
         internally
         
         Inputs: A - (n x n) Adjacency matrix in numpy array form. Note must be acceptable 
                     form for networkx to convert to a graph
-                Type - either 'Graph' or 'DiGraph' depending on the type of graph
+                Type - either 'Graph' or 'DiGraph' (directed graph) depending on the type of graph
         
         Outputs: 
                 graph - The networkx graph. 
@@ -66,9 +81,11 @@ class non_laplacian_dynamics:
         
         return self.graph
     
-    def mondal_scm(self,x,t,L,params):
+    def mondal_scm(self, x, t, L, params):
         """A coupled supply chain network model
-        
+
+          ** Unfinished ** 
+
            Inputs:  x - a (3n x 1) vector containing the 3 state variables for each oscillator
                     t - the time
                     L - the graph Laplacian
@@ -135,7 +152,9 @@ class non_laplacian_dynamics:
         
         return dx
 
-    def convert_adjacency(self,A,Type='DiGraph'):
+    # Is this in here twice?
+    '''
+    def convert_adjacency(self, A, Type = 'DiGraph'):
         """To convert an adacency matrix to a networkx graph and store the graph
         internally
         
@@ -157,10 +176,12 @@ class non_laplacian_dynamics:
             raise ValueError("Only Type = 'DiGraph' or Type = 'Graph' is allowed")
         
         return self.graph
+    '''
 
+    def convert_graph_to_laplacian(self, G):
 
-    def convert_graph_to_laplacian(self,G):
-        A = nx.adjacency_matrix(G).todense()
+        # Adjacency matrix returns the Adjacency Matrix of G
+        A = nx.adjacency_matrix(G).todense() # todense() is a SciPy method used to convert a sparse matrix or array into a standard, dense format. Uncompresses data so that every single coordinate -- including zero values -- is explicitly stored in memory
         L = self.get_Laplacian(A)
         return L             
 
@@ -175,7 +196,7 @@ class non_laplacian_dynamics:
             return L,E
     
     
-    def generate_initial_condition(self,lenx0,method='random',init_cond_type='normal',init_cond_params=[0,1],init_cond_offset=0,p_norm=2,scale=1):
+    def generate_initial_condition(self, lenx0,method='random',init_cond_type='normal',init_cond_params=[0,1],init_cond_offset=0,p_norm=2,scale=1):
         """Method for generating initial conditions.
             
             Inputs: lenx0 - the size of the initial condition vector
@@ -312,6 +333,11 @@ class non_laplacian_dynamics:
         
         return sol,t
 
+"""
+Laplacian dynamics: Handles standard diffusive/Laplacian coupling for systems like Rössler, Lorenz, Van der Pol,
+Brusselator, etc
+"""
+
 class laplacian_dynamics:
     
     def __init__(self):
@@ -319,14 +345,14 @@ class laplacian_dynamics:
         self.init_cond = None
     
     
-    def set_graph(self,G):
+    def set_graph(self, G):
         """A function to set the graph. Note it is assumed to be a networkx graph...
         
         Inputs: G - a networkx graph.
         """
         self.graph = G
     
-    def set_init_cond(self,init_cond):
+    def set_init_cond(self, init_cond):
         """For setting a particular initial condition"""
         self.init_cond=init_cond
 
@@ -336,13 +362,13 @@ class laplacian_dynamics:
     def return_init_cond(self):
         return self.init_cond
 
-    def convert_adjacency(self,A,Type='DiGraph'):
+    def convert_adjacency(self, A, Type='DiGraph'):
         """To convert an adacency matrix to a networkx graph and store the graph
         internally
         
         Inputs: A - (n x n) Adjacency matrix in numpy array form. Note must be acceptable 
                     form for networkx to convert to a graph
-                Type - either 'Graph' or 'DiGraph' depending on the type of graph
+                Type - either 'Graph' or 'DiGraph' (directed graph) depending on the type of graph
         
         Outputs: 
                 graph - The networkx graph. 
@@ -359,32 +385,84 @@ class laplacian_dynamics:
         
         return self.graph
 
-    def linear_dynamics(self,x,t,A):
-        x = np.dot(A,x)
-        return np.array(x).flatten()
+    def linear_dynamics(self, x, t, A):
+        """
+        Why are we taking in t if we don't use it?
+        Figure out the specifications for t and A
+        """
 
-    def rossler(self,x,t,LH,params):
-        a,b,c = params
+        x = np.dot(A, x) # Calculates the dot products of A and x
+        return np.array(x).flatten() # Creates an array and then flattens it into a 1D array
+
+    def rossler(self, x , t, LH, params):
+        """
+        A Rössler oscilator is a classic 3-dimensional nonlinear dynamical system often
+        used to study chaos. A single uncoupled Rössler oscillator has 3 state variables, usually called X, Y, and Z.
+        Its standard equations are:
+            dX/dt = - Y - Z
+            dY/dt = X + aY
+            dZ/dt = b + Z(X - c)
+
+        The system describes a point moving through 3D space over time. For some parameter values, the 
+        trajectory settles into a strange attractor. It never repeats exactly, but it stays in a bounded region and 
+        exhibits chaotic behavior.
+
+        Parameters:
+        x : current state of the whole network. Has length of 3n and is packed like this: 
+            [x0, y0, z0, x1, z1, y1, ...]
+
+            node 0 has x[0], x[1], x[2]; node 1 has x[3], x[4], x[5], and so on
+
+        t : the current time
+            Rössler equations do not explicitly depend on time, so t is not used inside of the function,
+            but it still has to be included because odeint expects derivative functions to have the form
+            f(x, t, ...)
+
+        LH: LH is the network coupling matrix. It is constructed earlier in the code as coupling_strength * np.kron(L, H)
+            L = graph Laplacian
+            H = coupling matrix deciding which oscillator variables are coupled
+                Default H is [[1, 0, 0],
+                              [0, 0, 0],
+                              [0, 0, 0]]
+                Means network coupling acts only through the first variable, the X variable
+                Y and Z variables are not directly coupled unless you provide a different coupling_matrix
+
+        params: is a list of the Rössler parameters
+            defualt values elsewhere in the code are: dynamics_params = [0.2, 0.2, 0.7]
+            so by default a = 0.2 - Controls how strongly Y value feeds back into the growth/change of Y
+                          b = 0.2 - Prevents Z eqn from being purely multiplicative
+                          c = 7   - Threshold for whether Z grows 
+
+        """
+        a, b, c = params
         lenx = len(x)
-        dx = deepcopy(x)
-        X = x[0:lenx:3]
-        Y = x[1:lenx:3]
-        Z = x[2:lenx:3]
-        dx[0:lenx:3] = -Y-Z
-        dx[1:lenx:3] = X+a*Y
-        dx[2:lenx:3] = b+Z*(X-c)
-        return np.array(dx-np.dot(LH,x)).flatten()
+        dx = deepcopy(x) # Deepcopy : creates a completely independent clone of an object by recursively copying every nested element it contains. Ensures that any changes made to the new object will never affect the original object, nor will changes to the original affect the copy
+        X = x[0:lenx:3] # Contains all node-level x-coordinates
+        Y = x[1:lenx:3] # Contains all node-level y-coordinates
+        Z = x[2:lenx:3] # Contains all node-level z-coordinates
+        
+        # Fills in derivatives for every node at once
+        dx[0:lenx:3] = - Y - Z
+        dx[1:lenx:3] = X + (a * Y)
+        dx[2:lenx:3] = b + Z * (X - c)
+
+        # Returns full derivative vector: network derivative = individual Rössler dynamics - coupling term
+        # dx/dt = F(x) - LH x , where F(x) is the uncoupled Rössler dynamics at each node, LH x is the Laplacian coupling contibute
+        # Returned vector tells odeint how to update the full system at the current time steph
+        return np.array(dx - np.dot(LH, x)).flatten()
        
-    def perturbed_rossler(self,x,t,LH,params):
-        a,b,c,d = params
+    # The perturbed Rössler oscillator is a Rössler oscillator with an added -dY term in the
+    # Z equation and allows Y to modify Z dynamics
+    def perturbed_rossler(self, x, t, LH, params):
+        a, b, c, d = params
         lenx = len(x)
         dx = deepcopy(x)
         X = x[0:lenx:3]
         Y = x[1:lenx:3]
         Z = x[2:lenx:3]
-        dx[0:lenx:3] = -Y-Z
-        dx[1:lenx:3] = X+a*Y
-        dx[2:lenx:3] = b+Z*(X-c)-d*Y
+        dx[0:lenx:3] = - Y - Z
+        dx[1:lenx:3] = X + a * Y
+        dx[2:lenx:3] = b + Z * (X - c)- d * Y
         return np.array(dx-np.dot(LH,x)).flatten()   
     
     def aizawa(self,x,t,LH,params):
@@ -629,20 +707,20 @@ class laplacian_dynamics:
         
         return np.array(dx-np.dot(LH,x)).flatten()      
 
-    def convert_graph_to_laplacian(self,G):
+    def convert_graph_to_laplacian(self, G):
         A = nx.adjacency_matrix(G).todense()
         L = self.get_Laplacian(A)
         return L             
 
-    def get_Laplacian(self,A,return_eigvals=False):
-        L = np.matrix(np.zeros((A.shape[0],A.shape[0])))
-        np.fill_diagonal(L,np.sum(A,1))
-        L = L-A
+    def get_Laplacian(self, A, return_eigvals = False):
+        L = np.matrix(np.zeros((A.shape[0], A.shape[0])))
+        np.fill_diagonal(L, np.sum(A,1))
+        L = L - A
         if not return_eigvals:
             return L
         else:
             E = np.linalg.eigvals(L)
-            return L,E
+            return L, E
     
 
     def continuous_time_linear_dynamics(self,G=None,tmax=100,timestep=0.1,init_cond_type='normal',init_cond=None,init_cond_params=[0,1],init_cond_offset=0):
@@ -807,7 +885,6 @@ class laplacian_dynamics:
         
         return x0
                     
-    
     def continuous_time_nonlinear_dynamics(self,G=None,L=None,tmax=100,timestep=0.1,method='random',init_cond_type='normal',init_cond=None,init_cond_params=[0,1],init_cond_offset=0,p_norm=2,scale=1,dynamics_type='Rossler',dynamics_params=[0.2,0.2,7],coupling_matrix=None,coupling_strength=1,dynamics_constant_params=True,dynamics_non_constant_params=None,changing_laplacian=False):
         """Generate continuous time Laplacian (i.e. diffusive) type non-linear dynamics
         Inputs: 
@@ -1468,8 +1545,7 @@ class laplacian_dynamics:
                 raise ValueError("Dynamics must be of allowed type, see docs for allowed types")                
         
         return sol,t
-    
-    
+      
     def nonlinear_find_time_to_sync(self,x,t,d,criterion='maxpdist',whichstd='all',Tol=1e-6,TolMax =1e6):
         """For finding the time to synchronization.
             
@@ -1601,9 +1677,7 @@ class laplacian_dynamics:
             av_list = np.array(av_list)
             Mean = np.mean(av_list)
         
-        return Mean,numfail
-            
-        
+        return Mean,numfail      
 
 class divergences:
     def __init__(self):
@@ -2038,8 +2112,7 @@ class divergences:
         
         else:
             raise ValueError("You have chosen an invalid method, see docs for available methods")
-            
-    
+              
 class master_stability:
 
     def __init__(self):
@@ -2101,9 +2174,6 @@ class master_stability:
         dx[1:lenx:2] = -(-X+Y-(a*Y-b*Y**3+c*Y**5))-Y
         
         return np.array(dx-np.dot(LH,x)).flatten()      
-
-
-
 
 class laplacian_pseudospectra:
     

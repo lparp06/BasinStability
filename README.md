@@ -13,11 +13,10 @@ ld = laplacian_dynamics()
 
 Now we have a couple of options for getting a graph initialized, one we can explicitely set the graph using set_graph, or the convert_adjacency options
 ```
-#G is a networkx Graph or DiGraph
 ld.set_graph(G)
 ```
 or
-```
+https://github.com/jefish003/GenerateDynamics.git``
 #A is either a 2d numpy array or a 2d matrix
 ld.convert_adjacency(A)
 ```
