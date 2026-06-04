@@ -23,21 +23,4 @@ def graph_laplacian(G):
     laplacian_undirected = nx.laplacian_matrix(G).toarray().astype(float)
     return laplacian_undirected
 
-# Code I used to test
-"""
-def main():
-    G = nx.Graph()
-    G.add_edges_from([
-        (0, 1),
-        (1, 2),
-        (1, 3)
-    ])
 
-    L = graph_laplacian(G)
-
-    print(L)
-
-if __name__ == "__main__":
-    main()
-
-"""
