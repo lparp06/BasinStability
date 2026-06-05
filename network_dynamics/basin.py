@@ -16,15 +16,40 @@ where:
 
 import numpy as np
 import networkx as nx
+from concurrent.futures import ProcessPoolExecutor
 
-from .sampling import sample_uniform_initial_condition, trial_seeds
-from .integration import integrate
-from .sync import (
-    is_synchronized_over_win,
-    is_synchronized_final,
-    final_max_pwd,
-    time_to_sync,
-)
+# These imports support both:
+#   python -m network_dynamics.basin
+# and, for quick testing from inside/near the package:
+#   python network_dynamics/basin.py
+try:
+    from .sampling import sample_uniform_initial_condition, trial_seeds
+    from .integration import integrate
+    from .sync import (
+        is_synchronized_over_win,
+        is_synchronized_final,
+        final_max_pwd,
+        time_to_sync,
+    )
+except ImportError:
+    from sampling import sample_uniform_initial_condition, trial_seeds
+    from integration import integrate
+    from sync import (
+        is_synchronized_over_win,
+        is_synchronized_final,
+        final_max_pwd,
+        time_to_sync,
+    )
+
+
+def _run_trial_from_settings(settings):
+    """
+    Helper for CPU parallelism.
+
+    settings is a dictionary containing the keyword arguments needed by
+    run_single_trial.
+    """
+    return run_single_trial(**settings)
 
 
 def solution_health(sol, max_abs_threshold=1e6):
@@ -48,6 +73,88 @@ def solution_health(sol, max_abs_threshold=1e6):
         "exceeds_max_abs_threshold": bool(max_abs_value > max_abs_threshold),
         "max_abs_threshold": max_abs_threshold,
     }
+
+
+def summarize_basin_results(
+    results,
+    G,
+    n_trials,
+    base_seed,
+    seeds,
+    parameters,
+    coupling_strength,
+    H,
+    tmax,
+    tstep,
+    dimension,
+    sync_tol,
+    tol_max,
+    window_fraction,
+    sampler,
+    sampling_bounds,
+    store_initial_conditions=False,
+    max_abs_threshold=1e6,
+    backend="serial",
+    n_workers=1,
+):
+    """
+    Summarize a list of single-trial basin-stability results.
+
+    This helper is shared by serial and CPU-parallel basin stability.
+    """
+
+    successes = 0
+    integration_failures = 0
+    successful_sync_times = []
+
+    for result in results:
+        if result["success"] is True:
+            successes += 1
+            successful_sync_times.append(result["sync_time"])
+
+        if result["integration_failed"] is True:
+            integration_failures += 1
+
+    sync_failures = n_trials - successes - integration_failures
+    basin_stability = successes / n_trials
+
+    if successful_sync_times:
+        sync_time_mean = float(np.mean(successful_sync_times))
+    else:
+        sync_time_mean = np.inf
+
+    summary = {
+        "basin_stability": basin_stability,
+        "n_trials": n_trials,
+        "successes": successes,
+        "sync_failures": sync_failures,
+        "integration_failures": integration_failures,
+        "base_seed": base_seed,
+        "trial_seeds": seeds,
+        "sync_tol": sync_tol,
+        "tol_max": tol_max,
+        "window_fraction": window_fraction,
+        "sampling_bounds": sampling_bounds,
+        "coupling_strength": coupling_strength,
+        "parameters": parameters,
+        "H": H,
+        "tmax": tmax,
+        "tstep": tstep,
+        "dimension": dimension,
+        "sampler": sampler,
+        "n_nodes": G.number_of_nodes(),
+        "n_edges": G.number_of_edges(),
+        "is_directed": G.is_directed(),
+        "sync_time_mean": sync_time_mean,
+        "successful_sync_times": successful_sync_times,
+        "store_initial_conditions": store_initial_conditions,
+        "max_abs_threshold": max_abs_threshold,
+        "backend": backend,
+        "n_workers": n_workers,
+        "results": results,
+    }
+
+    return summary
 
 
 def run_single_trial(
@@ -125,6 +232,7 @@ def run_single_trial(
         ):
             result = {
                 "success": False,
+                "final_success": False,
                 "integration_failed": True,
                 "solution_invalid": True,
                 "trial_seed": trial_seed,
@@ -236,9 +344,6 @@ def basin_stability_serial(
     Runs run_single_trial once per seed and computes:
 
         basin_stability = successes / n_trials
-
-    Integration failures and invalid solutions are counted separately, but
-    they are still included in the total trial count.
     """
 
     if G is None:
@@ -253,9 +358,6 @@ def basin_stability_serial(
     seeds = trial_seeds(base_seed=base_seed, n_trials=n_trials)
 
     results = []
-    successes = 0
-    int_failures = 0
-    successful_sync_times = []
 
     for seed in seeds:
         trial = run_single_trial(
@@ -278,51 +380,133 @@ def basin_stability_serial(
 
         results.append(trial)
 
-    for result in results:
-        if result["success"] is True:
-            successes += 1
-            successful_sync_times.append(result["sync_time"])
+    summary = summarize_basin_results(
+        results=results,
+        G=G,
+        n_trials=n_trials,
+        base_seed=base_seed,
+        seeds=seeds,
+        parameters=parameters,
+        coupling_strength=coupling_strength,
+        H=H,
+        tmax=tmax,
+        tstep=tstep,
+        dimension=dimension,
+        sync_tol=sync_tol,
+        tol_max=tol_max,
+        window_fraction=window_fraction,
+        sampler=sampler,
+        sampling_bounds=sampling_bounds,
+        store_initial_conditions=store_initial_conditions,
+        max_abs_threshold=max_abs_threshold,
+        backend="serial",
+        n_workers=1,
+    )
 
-        if result["integration_failed"] is True:
-            int_failures += 1
+    return summary
 
-    sync_failures = n_trials - successes - int_failures
 
-    bs_value = successes / n_trials
+def basin_stability_cpu(
+    G=None,
+    n_trials=25,
+    base_seed=42,
+    parameters=None,
+    coupling_strength=1,
+    H=None,
+    tmax=150,
+    tstep=0.05,
+    dimension=3,
+    sync_tol=1e-2,
+    tol_max=1e6,
+    window_fraction=0.1,
+    sampler="uniform",
+    sampling_bounds=None,
+    store_initial_conditions=False,
+    max_abs_threshold=1e6,
+    n_workers=None,
+):
+    """
+    Estimate basin stability using CPU parallelism.
 
-    if successful_sync_times:
-        sync_time_mean = float(np.mean(successful_sync_times))
-    else:
-        sync_time_mean = np.inf
+    Parallelizes at the trial level. Each worker runs one independent
+    run_single_trial call.
+    """
 
-    basin_stability_results = {
-        "basin_stability": bs_value,
-        "n_trials": n_trials,
-        "successes": successes,
-        "sync_failures": sync_failures,
-        "integration_failures": int_failures,
-        "base_seed": base_seed,
-        "trial_seeds": seeds,
-        "sync_tol": sync_tol,
-        "tol_max": tol_max,
-        "window_fraction": window_fraction,
-        "sampling_bounds": sampling_bounds,
-        "coupling_strength": coupling_strength,
-        "parameters": parameters,
-        "tmax": tmax,
-        "tstep": tstep,
-        "dimension": dimension,
-        "sampler": sampler,
-        "n_nodes": G.number_of_nodes(),
-        "n_edges": G.number_of_edges(),
-        "is_directed": G.is_directed(),
-        "sync_time_mean": sync_time_mean,
-        "successful_sync_times": successful_sync_times,
-        "store_initial_conditions": store_initial_conditions,
-        "max_abs_threshold": max_abs_threshold,
-        "results": results,
-    }
+    if G is None:
+        G = nx.path_graph(5)
 
-    return basin_stability_results
+    if parameters is None:
+        parameters = [0.2, 0.2, 7]
+
+    if sampling_bounds is None:
+        sampling_bounds = [-10, 10]
+
+    seeds = trial_seeds(base_seed=base_seed, n_trials=n_trials)
+
+    trial_settings = []
+
+    for seed in seeds:
+        settings = {
+            "G": G,
+            "trial_seed": seed,
+            "parameters": parameters,
+            "coupling_strength": coupling_strength,
+            "H": H,
+            "tmax": tmax,
+            "tstep": tstep,
+            "dimension": dimension,
+            "sync_tol": sync_tol,
+            "tol_max": tol_max,
+            "window_fraction": window_fraction,
+            "sampler": sampler,
+            "sampling_bounds": sampling_bounds,
+            "store_initial_condition": store_initial_conditions,
+            "max_abs_threshold": max_abs_threshold,
+        }
+
+        trial_settings.append(settings)
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        results = list(executor.map(_run_trial_from_settings, trial_settings))
+
+    summary = summarize_basin_results(
+        results=results,
+        G=G,
+        n_trials=n_trials,
+        base_seed=base_seed,
+        seeds=seeds,
+        parameters=parameters,
+        coupling_strength=coupling_strength,
+        H=H,
+        tmax=tmax,
+        tstep=tstep,
+        dimension=dimension,
+        sync_tol=sync_tol,
+        tol_max=tol_max,
+        window_fraction=window_fraction,
+        sampler=sampler,
+        sampling_bounds=sampling_bounds,
+        store_initial_conditions=store_initial_conditions,
+        max_abs_threshold=max_abs_threshold,
+        backend="cpu",
+        n_workers=n_workers,
+    )
+
+    return summary
+
+
+def print_basin_summary(summary):
+    """
+    Print a compact basin-stability summary.
+    """
+    print("Backend:", summary.get("backend"))
+    print("Workers:", summary.get("n_workers"))
+    print("Basin stability:", summary["basin_stability"])
+    print("Number of trials:", summary["n_trials"])
+    print("Successes:", summary["successes"])
+    print("Sync failures:", summary["sync_failures"])
+    print("Integration failures:", summary["integration_failures"])
+    print("Trial seeds:", summary["trial_seeds"])
+    print("Sync time mean:", summary["sync_time_mean"])
 
 
