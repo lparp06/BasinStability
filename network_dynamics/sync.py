@@ -49,7 +49,7 @@ def time_to_sync(sol, t, dimension, tol, tol_max):
     
     return np.inf
 
-# Simpler vers of is_synchronized_over_win
+# Final state synchronization check
 
 def is_synchronized_final(sol, dimension, tol):
     max_pwd = final_max_pwd(sol, dimension)

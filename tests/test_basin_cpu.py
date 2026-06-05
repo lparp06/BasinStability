@@ -7,6 +7,7 @@ Test that CPU-parallel basin stability matches the serial reference.
 
 import numpy as np
 import networkx as nx
+import matplotlib as plt
 
 from network_dynamics.basin import basin_stability_serial, basin_stability_cpu
 
