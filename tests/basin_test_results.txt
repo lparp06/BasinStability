@@ -1,150 +1,135 @@
 ======================================================================
-BASIN STABILITY TEST SUITE
+BASIN STABILITY TIMING TEST
 ======================================================================
 
 ======================================================================
-Test 0: Single-trial smoke test
-======================================================================
-Success: True
-Final success: True
-Integration failed: False
-Trial seed: 42
-Sampler: uniform
-Initial condition shape: (15,)
-State dimension: 15
-Final distance: 0.000624544188182968
-Sync time: 100.85000000000001
-Sync tolerance: 0.01
-Window fraction: 0.1
-Solution health: {'contains_nan': False, 'contains_inf': False, 'max_abs_value': 33.33518085353503, 'exceeds_max_abs_threshold': False, 'max_abs_threshold': 1000000.0}
-
-======================================================================
-Test 1: Convergence check over n_trials
-======================================================================
-
 n_trials = 10
-------------------------------
+======================================================================
+
+Serial
+------
+Elapsed seconds: 0.3691791250021197
 Basin stability: 0.8
-Number of trials: 10
 Successes: 8
 Sync failures: 2
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51]
-Sync time mean: 72.15
 
+CPU parallel, n_workers=2
+-------------------------
+Elapsed seconds: 0.4990534999524243
+Basin stability: 0.8
+Successes: 8
+Sync failures: 2
+Integration failures: 0
+Speedup: 0.7397586131292821
+Matches serial: True
+
+CPU parallel, n_workers=4
+-------------------------
+Elapsed seconds: 0.47006945800967515
+Basin stability: 0.8
+Successes: 8
+Sync failures: 2
+Integration failures: 0
+Speedup: 0.7853714354582065
+Matches serial: True
+
+======================================================================
 n_trials = 25
-------------------------------
+======================================================================
+
+Serial
+------
+Elapsed seconds: 0.9258498339913785
 Basin stability: 0.84
-Number of trials: 25
 Successes: 21
 Sync failures: 4
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66]
-Sync time mean: 77.36904761904762
 
+CPU parallel, n_workers=2
+-------------------------
+Elapsed seconds: 0.800522958044894
+Basin stability: 0.84
+Successes: 21
+Sync failures: 4
+Integration failures: 0
+Speedup: 1.1565562544921493
+Matches serial: True
+
+CPU parallel, n_workers=4
+-------------------------
+Elapsed seconds: 0.6203607089701109
+Basin stability: 0.84
+Successes: 21
+Sync failures: 4
+Integration failures: 0
+Speedup: 1.4924379004086576
+Matches serial: True
+
+======================================================================
 n_trials = 50
-------------------------------
+======================================================================
+
+Serial
+------
+Elapsed seconds: 1.8515168749727309
 Basin stability: 0.92
-Number of trials: 50
 Successes: 46
 Sync failures: 4
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 75.84239130434784
 
+CPU parallel, n_workers=2
+-------------------------
+Elapsed seconds: 1.2376422919915058
+Basin stability: 0.92
+Successes: 46
+Sync failures: 4
+Integration failures: 0
+Speedup: 1.496003236923515
+Matches serial: True
+
+CPU parallel, n_workers=4
+-------------------------
+Elapsed seconds: 0.8414762080064975
+Basin stability: 0.92
+Successes: 46
+Sync failures: 4
+Integration failures: 0
+Speedup: 2.200319934605251
+Matches serial: True
+
+======================================================================
 n_trials = 100
-------------------------------
+======================================================================
+
+Serial
+------
+Elapsed seconds: 3.699274541984778
 Basin stability: 0.95
-Number of trials: 100
 Successes: 95
 Sync failures: 5
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141]
-Sync time mean: 77.52315789473685
 
-======================================================================
-Test 2: Sync tolerance sensitivity
-======================================================================
-
-sync_tol = 0.01
-------------------------------
-Basin stability: 0.92
-Number of trials: 50
-Successes: 46
-Sync failures: 4
+CPU parallel, n_workers=2
+-------------------------
+Elapsed seconds: 2.165886082977522
+Basin stability: 0.95
+Successes: 95
+Sync failures: 5
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 75.84239130434784
+Speedup: 1.7079728112474184
+Matches serial: True
 
-sync_tol = 0.001
-------------------------------
-Basin stability: 0.34
-Number of trials: 50
-Successes: 17
-Sync failures: 33
+CPU parallel, n_workers=4
+-------------------------
+Elapsed seconds: 1.3049997910275124
+Basin stability: 0.95
+Successes: 95
+Sync failures: 5
 Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 93.53823529411765
+Speedup: 2.8346935895461676
+Matches serial: True
 
 ======================================================================
-Test 3: Sampling bounds sensitivity
-======================================================================
-
-sampling_bounds = [-2, 2]
-------------------------------
-Basin stability: 0.92
-Number of trials: 50
-Successes: 46
-Sync failures: 4
-Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 75.84239130434784
-
-sampling_bounds = [-5, 5]
-------------------------------
-Basin stability: 0.62
-Number of trials: 50
-Successes: 31
-Sync failures: 19
-Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 89.71451612903226
-
-sampling_bounds = [-10, 10]
-------------------------------
-Basin stability: 0.26
-Number of trials: 50
-Successes: 13
-Sync failures: 37
-Integration failures: 0
-Trial seeds: [42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91]
-Sync time mean: 97.3923076923077
-
-======================================================================
-Test 4: Reproducibility check
-======================================================================
-Same aggregate counts: True
-Same per-trial results: True
-
-======================================================================
-Compact Summary
-======================================================================
-
-Convergence check:
-n_trials: 10 | BS: 0.8 | successes: 8 | sync failures: 2 | integration failures: 0
-n_trials: 25 | BS: 0.84 | successes: 21 | sync failures: 4 | integration failures: 0
-n_trials: 50 | BS: 0.92 | successes: 46 | sync failures: 4 | integration failures: 0
-n_trials: 100 | BS: 0.95 | successes: 95 | sync failures: 5 | integration failures: 0
-
-Tolerance sensitivity:
-sync_tol: 0.01 | BS: 0.92 | successes: 46 | sync failures: 4 | integration failures: 0
-sync_tol: 0.001 | BS: 0.34 | successes: 17 | sync failures: 33 | integration failures: 0
-
-Sampling bounds sensitivity:
-bounds: [-2, 2] | BS: 0.92 | successes: 46 | sync failures: 4 | integration failures: 0
-bounds: [-5, 5] | BS: 0.62 | successes: 31 | sync failures: 19 | integration failures: 0
-bounds: [-10, 10] | BS: 0.26 | successes: 13 | sync failures: 37 | integration failures: 0
-
-======================================================================
-Finished basin stability tests.
+Timing test complete.
 ======================================================================
