@@ -4,9 +4,6 @@ test_against_original.py
 Compare the new modular network_dynamics package against the original
 GenerateDynamics.py behavior.
 
-Run from project root:
-
-    python3 -m tests.test_against_original
 """
 
 import numpy as np

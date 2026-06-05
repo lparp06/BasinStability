@@ -19,7 +19,7 @@ def integrate(G, initial_conditions, parameters, coupling_strength, H, tmax, tim
     def rhs (time, state):
         return rossler(time, state, coupling_matrix, parameters)
     
-    result = solve_ivp(rhs, t_span = (t[0], t[-1]), y0 = initial_conditions, t_eval = t)
+    result = solve_ivp(rhs, t_span = (t[0], t[-1]), y0 = initial_conditions, t_eval = t, method = "LSODA")
     
     sol = result.y.T
 
