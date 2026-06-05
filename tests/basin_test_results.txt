@@ -1,4 +1,132 @@
 ======================================================================
+NEW MODULAR CODE VS ORIGINAL PROGRAM TESTS
+======================================================================
+
+======================================================================
+Test 1: Laplacian comparison
+======================================================================
+Original L:
+[[ 1. -1.  0.  0.  0.]
+ [-1.  2. -1.  0.  0.]
+ [ 0. -1.  2. -1.  0.]
+ [ 0.  0. -1.  2. -1.]
+ [ 0.  0.  0. -1.  1.]]
+New L:
+[[ 1. -1.  0.  0.  0.]
+ [-1.  2. -1.  0.  0.]
+ [ 0. -1.  2. -1.  0.]
+ [ 0.  0. -1.  2. -1.]
+ [ 0.  0.  0. -1.  1.]]
+Same Laplacian shape: PASS
+Same Laplacian values: PASS
+
+======================================================================
+Test 2: Single Rössler trajectory comparison
+======================================================================
+Original sol.shape: (3000, 15)
+New sol.shape: (3000, 15)
+Original t.shape: (3000,)
+New t.shape: (3000,)
+Same solution shape: PASS
+Same time shape: PASS
+Same time values: PASS
+New solution preserves initial condition: PASS
+Original final max pairwise distance: 0.00036113659678454086
+New final max pairwise distance: 0.0010084124836895188
+Final synchronization distances reasonably close: PASS
+Original sync time at 1e-3: 124.4
+New sync time at 1e-3: 141.0
+Sync times reasonably close: PASS
+
+======================================================================
+Test 3: New sync.py against saved original baseline
+======================================================================
+Final max pairwise distance: 0.00036113659678454086
+Expected approximately: 0.000361
+Sync time tol=1e-1: 50.35
+Expected approximately: 50.35
+Sync time tol=1e-2: 84.95
+Expected approximately: 84.95
+Sync time tol=1e-3: 124.4
+Expected approximately: 124.4
+Sync time tol=1e-4: inf
+Expected: inf
+Baseline sync metrics match expected values: PASS
+
+======================================================================
+Test 4: Serial basin stability vs CPU basin stability
+======================================================================
+Serial BS: 0.8
+CPU BS: 0.8
+Same aggregate basin result: PASS
+Same per-trial results: PASS
+
+======================================================================
+Final result
+======================================================================
+PASS: New modular code matches the original behavior for tested functionality.
+
+======================================================================
+CPU PARALLEL BASIN STABILITY TEST
+======================================================================
+
+Running serial reference...
+
+Serial summary
+--------------
+Backend: serial
+Workers: 1
+Basin stability: 0.8
+Number of trials: 10
+Successes: 8
+Sync failures: 2
+Integration failures: 0
+Mean sync time: 72.15
+
+Running CPU-parallel version...
+
+CPU summary
+-----------
+Backend: cpu
+Workers: 2
+Basin stability: 0.8
+Number of trials: 10
+Successes: 8
+Sync failures: 2
+Integration failures: 0
+Mean sync time: 72.15
+
+Aggregate comparison
+--------------------
+basin_stability: PASS
+successes: PASS
+sync_failures: PASS
+integration_failures: PASS
+trial_seeds: PASS
+sync_time_mean: PASS
+
+======================================================================
+Final comparison
+======================================================================
+Aggregate summary match: True
+Per-trial results match: True
+PASS: CPU-parallel results match serial results.
+
+Trial-by-trial comparison
+-------------------------
+Seed: 42 | Serial success: True | CPU success: True | Serial sync_time: 100.85000000000001 | CPU sync_time: 100.85000000000001 | Serial final_distance: 0.000624544188182968 | CPU final_distance: 0.000624544188182968
+Seed: 43 | Serial success: False | CPU success: False | Serial sync_time: 109.5 | CPU sync_time: 109.5 | Serial final_distance: 0.0014518366260365108 | CPU final_distance: 0.0014518366260365108
+Seed: 44 | Serial success: True | CPU success: True | Serial sync_time: 75.25 | CPU sync_time: 75.25 | Serial final_distance: 0.000215457459820426 | CPU final_distance: 0.000215457459820426
+Seed: 45 | Serial success: True | CPU success: True | Serial sync_time: 26.1 | CPU sync_time: 26.1 | Serial final_distance: 3.2747100165844264e-05 | CPU final_distance: 3.2747100165844264e-05
+Seed: 46 | Serial success: False | CPU success: False | Serial sync_time: 128.8 | CPU sync_time: 128.8 | Serial final_distance: 0.003067634817273107 | CPU final_distance: 0.003067634817273107
+Seed: 47 | Serial success: True | CPU success: True | Serial sync_time: 62.650000000000006 | CPU sync_time: 62.650000000000006 | Serial final_distance: 9.113981247268816e-05 | CPU final_distance: 9.113981247268816e-05
+Seed: 48 | Serial success: True | CPU success: True | Serial sync_time: 70.10000000000001 | CPU sync_time: 70.10000000000001 | Serial final_distance: 0.00014470254497613133 | CPU final_distance: 0.00014470254497613133
+Seed: 49 | Serial success: True | CPU success: True | Serial sync_time: 86.45 | CPU sync_time: 86.45 | Serial final_distance: 0.00043893082560938953 | CPU final_distance: 0.00043893082560938953
+Seed: 50 | Serial success: True | CPU success: True | Serial sync_time: 93.0 | CPU sync_time: 93.0 | Serial final_distance: 0.0004519345680041596 | CPU final_distance: 0.0004519345680041596
+Seed: 51 | Serial success: True | CPU success: True | Serial sync_time: 62.800000000000004 | CPU sync_time: 62.800000000000004 | Serial final_distance: 9.343874837051703e-05 | CPU final_distance: 9.343874837051703e-05
+
+
+======================================================================
 BASIN STABILITY TIMING TEST
 ======================================================================
 
