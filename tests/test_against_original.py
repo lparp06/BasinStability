@@ -11,13 +11,13 @@ import networkx as nx
 
 from GenerateDynamics import laplacian_dynamics
 
-from network_dynamics.graphs import graph_laplacian
-from network_dynamics.integration import integrate
-from network_dynamics.sync import (
+from network_dynamics.core.graphs import graph_laplacian
+from network_dynamics.cpu.integration import integrate
+from network_dynamics.core.sync import (
     final_max_pwd,
     time_to_sync,
 )
-from network_dynamics.basin import (
+from network_dynamics.cpu.basin import (
     basin_stability_serial,
     basin_stability_cpu,
 )

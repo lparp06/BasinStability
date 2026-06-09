@@ -9,7 +9,7 @@ import numpy as np
 import networkx as nx
 import matplotlib as plt
 
-from network_dynamics.basin import basin_stability_serial, basin_stability_cpu
+from network_dynamics.cpu.basin import basin_stability_serial, basin_stability_cpu
 
 
 def compare_trial_results(serial_summary, cpu_summary):

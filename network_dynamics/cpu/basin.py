@@ -23,18 +23,18 @@ from concurrent.futures import ProcessPoolExecutor
 # and, for quick testing from inside/near the package:
 #   python network_dynamics/basin.py
 try:
-    from .sampling import sample_uniform_initial_condition, trial_seeds
+    from ..core.sampling import sample_uniform_initial_condition, trial_seeds
     from .integration import integrate
-    from .sync import (
+    from ..core.sync import (
         is_synchronized_over_win,
         is_synchronized_final,
         final_max_pwd,
         time_to_sync,
     )
 except ImportError:
-    from sampling import sample_uniform_initial_condition, trial_seeds
-    from integration import integrate
-    from sync import (
+    from network_dynamics.core.sampling import sample_uniform_initial_condition, trial_seeds
+    from network_dynamics.cpu.integration import integrate
+    from network_dynamics.core.sync import (
         is_synchronized_over_win,
         is_synchronized_final,
         final_max_pwd,

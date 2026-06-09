@@ -3,9 +3,9 @@ Integrates one trajectory
 """
 import numpy as np
 from scipy.integrate import solve_ivp
-from .graphs import graph_laplacian
-from .coupling import build_coupling_matrix
-from .oscillators import rossler
+from network_dynamics.core.graphs import graph_laplacian
+from network_dynamics.core.coupling import build_coupling_matrix
+from network_dynamics.core.oscillators import rossler
 
 
 def integrate(G, initial_conditions, parameters, coupling_strength, H, tmax, timestep):

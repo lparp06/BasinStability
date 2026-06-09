@@ -1,6 +1,6 @@
 
 
-from network_dynamics.basin import basin_stability_serial, run_single_trial
+from network_dynamics.cpu.basin import basin_stability_serial, run_single_trial
 import networkx as nx
 import numpy as np
 

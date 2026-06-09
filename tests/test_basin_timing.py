@@ -302,7 +302,7 @@ def main():
 
         # Use smaller values for quick debugging.
         # Use larger values for more meaningful timing data.
-        trial_counts = [10, 25, 50, 100, 250]
+        trial_counts = [100, 1000, 2500, 5000]
 
         # Choose worker counts that make sense for your machine.
         # If your laptop has fewer available cores, remove 6.
