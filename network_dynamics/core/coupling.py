@@ -1,16 +1,107 @@
 """
-Module that builds coupling matrices
-Coupling matrix governs the strength of influence between two nodes
-Eigenvalues of the graph Laplacian are often used in synchronization analysis.
+Coupling matrix construction.
+
+The coupling matrix determines how oscillator states influence one another
+through the network.
+
+The graph Laplacian L describes coupling between nodes.
+The inner coupling matrix H describes which state variables are coupled
+inside each oscillator.
+
+For a network with:
+    n_nodes nodes
+    dimension variables per oscillator
+
+L has shape:
+    (n_nodes, n_nodes)
+
+H has shape:
+    (dimension, dimension)
+
+The full coupling matrix has shape:
+    (n_nodes * dimension, n_nodes * dimension)
 """
+
 import numpy as np
 
-def build_coupling_matrix(L, H = None, strength = 1):
-    if (H is None):
-        H = np.eye(3)
-        H[1, 1] = 0
-        H[2, 2] = 0
+
+def default_x_coupling_matrix(dimension=3):
+    """
+    Build a default inner coupling matrix that couples only the first variable.
+
+    For Rössler systems with state (x, y, z), this couples x only:
+
+        [[1, 0, 0],
+         [0, 0, 0],
+         [0, 0, 0]]
+    """
+
+    H = np.zeros((dimension, dimension))
+    H[0, 0] = 1.0
+
+    return H
+
+
+def validate_inner_coupling_matrix(H, dimension):
+    """
+    Check that H has shape (dimension, dimension).
+    """
+
+    H = np.asarray(H, dtype=float)
+
+    expected_shape = (dimension, dimension)
+
+    if H.shape != expected_shape:
+        raise ValueError(
+            "Inner coupling matrix H has the wrong shape. "
+            f"Expected {expected_shape}, got {H.shape}."
+        )
+
+    return H
+
+
+def build_coupling_matrix(L, H=None, strength=1.0, dimension=3):
+    """
+    Build the full coupling matrix for the network system.
+
+    Parameters
+    ----------
+    L : np.ndarray
+        Graph Laplacian with shape (n_nodes, n_nodes).
+
+    H : np.ndarray or None
+        Inner coupling matrix with shape (dimension, dimension).
+        If None, defaults to x-only coupling.
+
+    strength : float
+        Coupling strength multiplier.
+
+    dimension : int
+        Number of variables per oscillator.
+
+    Returns
+    -------
+    np.ndarray
+        Full coupling matrix with shape:
+            (n_nodes * dimension, n_nodes * dimension)
+    """
+
+    L = np.asarray(L, dtype=float)
+
+    if L.ndim != 2 or L.shape[0] != L.shape[1]:
+        raise ValueError(
+            "L must be a square matrix. "
+            f"Got shape {L.shape}."
+        )
+
+    if H is None:
+        H = default_x_coupling_matrix(dimension=dimension)
+    else:
+        H = validate_inner_coupling_matrix(H, dimension=dimension)
 
     coupling_matrix = strength * np.kron(L, H)
-    coupling_matrix[np.isclose(coupling_matrix, 0)] = 0
+
+    # Remove tiny floating-point roundoff values that should be zero.
+    coupling_matrix[np.isclose(coupling_matrix, 0.0)] = 0.0
+
     return coupling_matrix
