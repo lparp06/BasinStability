@@ -102,9 +102,7 @@ def rk4_step(rhs, time, state, dt):
     k3 = rhs(time + 0.5 * dt, state + 0.5 * dt * k2)
     k4 = rhs(time + dt, state + dt * k3)
 
-    next_state = state + (dt / 6.0) * (
-        k1 + 2.0 * k2 + 2.0 * k3 + k4
-    )
+    next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
 
     return next_state
 
@@ -205,6 +203,4 @@ def integrate(
             dimension=dimension,
         )
 
-    raise ValueError(
-        "Unknown integrator. Use integrator='LSODA' or integrator='RK4'."
-    )
+    raise ValueError("Unknown integrator. Use integrator='LSODA' or integrator='RK4'.")

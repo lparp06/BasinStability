@@ -63,9 +63,7 @@ class BasinSummary:
         """
 
         successes = sum(result.success for result in results)
-        integration_failures = sum(
-            result.integration_failed for result in results
-        )
+        integration_failures = sum(result.integration_failed for result in results)
 
         sync_failures = config.n_trials - successes - integration_failures
 
@@ -113,8 +111,5 @@ class BasinSummary:
             "sync_time_mean": self.sync_time_mean,
             "base_seed": self.base_seed,
             "trial_seeds": self.trial_seeds,
-            "results": [
-                result.to_dict()
-                for result in self.results
-            ],
+            "results": [result.to_dict() for result in self.results],
         }

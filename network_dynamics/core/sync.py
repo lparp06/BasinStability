@@ -23,6 +23,7 @@ If node 0 and node 1 are synchronized, then
 import numpy as np
 from scipy.spatial.distance import pdist
 
+
 def reshape_state_by_node(state_vector, dimension=3):
     """
     Take one flat state vector and reshape it into one row per oscillator.
@@ -38,8 +39,7 @@ def reshape_state_by_node(state_vector, dimension=3):
 
     if state_vector.ndim != 1:
         raise ValueError(
-            "state_vector must be one-dimensional. "
-            f"Got shape {state_vector.shape}."
+            "state_vector must be one-dimensional. " f"Got shape {state_vector.shape}."
         )
 
     if state_vector.size % dimension != 0:
@@ -50,6 +50,7 @@ def reshape_state_by_node(state_vector, dimension=3):
 
     return state_vector.reshape(-1, dimension)
 
+
 def max_pairwise_distance(state_vector, dimension=3):
     state_by_node = reshape_state_by_node(state_vector, dimension)
 
@@ -59,13 +60,15 @@ def max_pairwise_distance(state_vector, dimension=3):
     distances = pdist(state_by_node)
     return float(distances.max())
 
+
 def final_max_pwd(sol, dimension=3):
     final_state = sol[-1]
     max_pwd_final = max_pairwise_distance(final_state, dimension)
     return max_pwd_final
 
+
 def time_to_sync(sol, t, dimension=3, tol=1e-3, tol_max=1e6):
-    """ 
+    """
     Return the first time at which the oscillators become synchronized.
 
     Returns np.inf if synchronization never occurs or if the pairwise
@@ -90,10 +93,13 @@ def time_to_sync(sol, t, dimension=3, tol=1e-3, tol_max=1e6):
 
     return np.inf
 
+
 # Final state synchronization check
+
 
 def is_synchronized_final(sol, dimension=3, tol=1e-3):
     return final_max_pwd(sol, dimension) < tol
+
 
 def is_synchronized_over_win(sol, dimension=3, tol=1e-3, win_frac=0.2):
     """
@@ -102,10 +108,7 @@ def is_synchronized_over_win(sol, dimension=3, tol=1e-3, win_frac=0.2):
     """
 
     if not 0 < win_frac <= 1:
-        raise ValueError(
-            "win_frac must be in the interval (0, 1]. "
-            f"Got {win_frac}."
-        )
+        raise ValueError("win_frac must be in the interval (0, 1]. " f"Got {win_frac}.")
 
     window_start = int((1 - win_frac) * len(sol))
     final_window = sol[window_start:]
@@ -118,38 +121,21 @@ def is_synchronized_over_win(sol, dimension=3, tol=1e-3, win_frac=0.2):
 
     return True
 
-def analyze_synchronization(
-        sol,
-        t,
-        dimension=3,
-        tol=1e-3,
-        tol_max=1e6,
-        win_frac=0.2
-    ):
+
+def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac=0.2):
     """
     Compute all synchronization metrics for one trajectory
     """
     final_distance = final_max_pwd(sol, dimension)
 
     sync_time = time_to_sync(
-        sol=sol,
-        t=t,
-        dimension=dimension,
-        tol=tol,
-        tol_max=tol_max
+        sol=sol, t=t, dimension=dimension, tol=tol, tol_max=tol_max
     )
 
-    final_success = is_synchronized_final(
-        sol=sol,
-        dimension=dimension,
-        tol=tol
-    )
+    final_success = is_synchronized_final(sol=sol, dimension=dimension, tol=tol)
 
     window_success = is_synchronized_over_win(
-        sol=sol,
-        dimension=dimension,
-        tol=tol,
-        win_frac=win_frac
+        sol=sol, dimension=dimension, tol=tol, win_frac=win_frac
     )
 
     return {

@@ -11,13 +11,25 @@ def main():
 
     G = nx.path_graph(5)
 
-    initial_condition = np.array([
-        1.0, 0.0, 0.0,
-        1.1, 0.0, 0.0,
-        0.9, 0.0, 0.0,
-        1.2, 0.0, 0.0,
-        0.8, 0.0, 0.0,
-    ])
+    initial_condition = np.array(
+        [
+            1.0,
+            0.0,
+            0.0,
+            1.1,
+            0.0,
+            0.0,
+            0.9,
+            0.0,
+            0.0,
+            1.2,
+            0.0,
+            0.0,
+            0.8,
+            0.0,
+            0.0,
+        ]
+    )
 
     sol, t = integrate_lsoda(
         G=G,

@@ -73,8 +73,7 @@ def choose_success(sync_metrics, success_definition):
         return sync_metrics["window_success"]
 
     raise ValueError(
-        "success_definition must be either "
-        "'final_success' or 'window_success'."
+        "success_definition must be either " "'final_success' or 'window_success'."
     )
 
 
@@ -103,7 +102,7 @@ def run_single_trial(config, trial_seed):
             tmax=config.tmax,
             dt=config.dt,
             dimension=config.dimension,
-            integrator=config.integrator
+            integrator=config.integrator,
         )
 
         health = solution_health(
@@ -292,4 +291,3 @@ def print_trial_results(summary):
             f"final_distance={result.final_distance} | "
             f"error={result.error}"
         )
-

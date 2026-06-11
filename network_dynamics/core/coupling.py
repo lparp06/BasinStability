@@ -89,10 +89,7 @@ def build_coupling_matrix(L, H=None, strength=1.0, dimension=3):
     L = np.asarray(L, dtype=float)
 
     if L.ndim != 2 or L.shape[0] != L.shape[1]:
-        raise ValueError(
-            "L must be a square matrix. "
-            f"Got shape {L.shape}."
-        )
+        raise ValueError("L must be a square matrix. " f"Got shape {L.shape}.")
 
     if H is None:
         H = default_x_coupling_matrix(dimension=dimension)

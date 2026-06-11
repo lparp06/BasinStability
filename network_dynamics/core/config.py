@@ -78,9 +78,7 @@ class BasinConfig:
             raise ValueError("dimension must be positive.")
 
         if len(self.parameters) != 3:
-            raise ValueError(
-                "parameters must contain exactly three values: (a, b, c)."
-            )
+            raise ValueError("parameters must contain exactly three values: (a, b, c).")
 
         if self.coupling_strength < 0:
             raise ValueError("coupling_strength must be nonnegative.")
@@ -92,8 +90,7 @@ class BasinConfig:
 
             if H_array.shape != expected_shape:
                 raise ValueError(
-                    f"H must have shape {expected_shape}, "
-                    f"but got {H_array.shape}."
+                    f"H must have shape {expected_shape}, " f"but got {H_array.shape}."
                 )
 
         if self.tmax <= 0:
@@ -102,7 +99,10 @@ class BasinConfig:
         if self.dt <= 0:
             raise ValueError("dt must be positive.")
 
-        if self.integrator not in ("LSODA", "RK4", ):
+        if self.integrator not in (
+            "LSODA",
+            "RK4",
+        ):
             raise ValueError(
                 "Only integrator='LSODA' or integrator='RK4' is currently supported."
             )
@@ -114,21 +114,15 @@ class BasinConfig:
             raise ValueError("base_seed must be an integer.")
 
         if self.sampler != "uniform":
-            raise ValueError(
-                "Only sampler='uniform' is currently supported."
-            )
+            raise ValueError("Only sampler='uniform' is currently supported.")
 
         if len(self.sampling_bounds) != 2:
-            raise ValueError(
-                "sampling_bounds must be a tuple like (low, high)."
-            )
+            raise ValueError("sampling_bounds must be a tuple like (low, high).")
 
         low, high = self.sampling_bounds
 
         if low >= high:
-            raise ValueError(
-                "sampling_bounds must satisfy low < high."
-            )
+            raise ValueError("sampling_bounds must satisfy low < high.")
 
         if self.sync_tol <= 0:
             raise ValueError("sync_tol must be positive.")
@@ -137,9 +131,7 @@ class BasinConfig:
             raise ValueError("tol_max must be positive.")
 
         if not (0 < self.window_fraction <= 1):
-            raise ValueError(
-                "window_fraction must satisfy 0 < window_fraction <= 1."
-            )
+            raise ValueError("window_fraction must satisfy 0 < window_fraction <= 1.")
 
         if self.success_definition not in (
             "final_success",
@@ -154,14 +146,10 @@ class BasinConfig:
             raise ValueError("max_abs_threshold must be positive.")
 
         if self.backend not in ("serial", "cpu", "gpu"):
-            raise ValueError(
-                "backend must be one of: 'serial', 'cpu', or 'gpu'."
-            )
+            raise ValueError("backend must be one of: 'serial', 'cpu', or 'gpu'.")
 
         if self.n_workers is not None and self.n_workers <= 0:
-            raise ValueError(
-                "n_workers must be positive or None."
-            )
+            raise ValueError("n_workers must be positive or None.")
 
         return self
 

@@ -188,13 +188,7 @@ def get_row(rows, backend, n_trials, workers):
 
 def plot_runtime_vs_trials(rows, output_dir):
     trial_counts = sorted({row["n_trials"] for row in rows})
-    worker_counts = sorted(
-        {
-            row["workers"]
-            for row in rows
-            if row["backend"] == "cpu"
-        }
-    )
+    worker_counts = sorted({row["workers"] for row in rows if row["backend"] == "cpu"})
 
     plt.figure(figsize=(8, 5))
 
@@ -238,13 +232,7 @@ def plot_runtime_vs_trials(rows, output_dir):
 
 def plot_runtime_vs_workers(rows, output_dir):
     trial_counts = sorted({row["n_trials"] for row in rows})
-    worker_counts = sorted(
-        {
-            row["workers"]
-            for row in rows
-            if row["backend"] == "cpu"
-        }
-    )
+    worker_counts = sorted({row["workers"] for row in rows if row["backend"] == "cpu"})
 
     plt.figure(figsize=(8, 5))
 
@@ -276,13 +264,7 @@ def plot_runtime_vs_workers(rows, output_dir):
 
 def plot_speedup_vs_trials(rows, output_dir):
     trial_counts = sorted({row["n_trials"] for row in rows})
-    worker_counts = sorted(
-        {
-            row["workers"]
-            for row in rows
-            if row["backend"] == "cpu"
-        }
-    )
+    worker_counts = sorted({row["workers"] for row in rows if row["backend"] == "cpu"})
 
     plt.figure(figsize=(8, 5))
 
@@ -320,13 +302,7 @@ def plot_speedup_vs_trials(rows, output_dir):
 
 def plot_efficiency_vs_workers(rows, output_dir):
     trial_counts = sorted({row["n_trials"] for row in rows})
-    worker_counts = sorted(
-        {
-            row["workers"]
-            for row in rows
-            if row["backend"] == "cpu"
-        }
-    )
+    worker_counts = sorted({row["workers"] for row in rows if row["backend"] == "cpu"})
 
     plt.figure(figsize=(8, 5))
 
