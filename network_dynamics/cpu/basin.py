@@ -1,90 +1,31 @@
 """
-basin.py
+CPU basin-stability experiments.
 
-Runs basin-stability experiments on the CPU.
-
-This file coordinates basin-stability trials:
-1. sample an initial condition
-2. integrate the trajectory
-3. check solution health
-4. check synchronization
-5. summarize results
-
-Supports:
-- serial CPU runs
-- multiprocessing CPU runs
-- BasinConfig
-- TrialResult
-- BasinSummary
+This module coordinates trial sampling, CPU integration, optional
+multiprocessing, and result summaries. Shared basin concepts live in
+``network_dynamics.core.basin_common`` so the CPU and GPU backends classify
+trials the same way.
 """
 
-import numpy as np
-import networkx as nx
-from concurrent.futures import ProcessPoolExecutor
+import sys
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
-from network_dynamics.core.config import BasinConfig
-from network_dynamics.core.results import TrialResult, BasinSummary
-from network_dynamics.core.sampling import sample_uniform_initial_condition, trial_seeds
-from network_dynamics.core.diagnostics import (
-    solution_health,
-    is_solution_valid,
-    format_health_message,
+from network_dynamics.core.basin_common import (
+    choose_success,
+    classify_solution,
+    failed_trial_result,
+    sample_initial_condition,
+    validate_initial_conditions_batch,
 )
-from network_dynamics.core.sync import analyze_synchronization
-from network_dynamics.cpu.integration import integrate
-
-
-def sample_initial_condition(config, trial_seed):
-    """
-    Generate one random initial condition for one basin trial.
-    """
-
-    rng = np.random.default_rng(trial_seed)
-
-    if config.sampler != "uniform":
-        raise ValueError(f"Unknown sampler: {config.sampler}")
-
-    low, high = config.sampling_bounds
-
-    initial_condition = sample_uniform_initial_condition(
-        rng=rng,
-        n_nodes=config.n_nodes,
-        dimension=config.dimension,
-        low=low,
-        high=high,
-    )
-
-    return initial_condition
-
-
-def choose_success(sync_metrics, success_definition):
-    """
-    Choose which synchronization condition counts as basin success.
-
-    Options:
-    - "final_success"
-    - "window_success"
-    """
-
-    if success_definition == "final_success":
-        return sync_metrics["final_success"]
-
-    if success_definition == "window_success":
-        return sync_metrics["window_success"]
-
-    raise ValueError(
-        "success_definition must be either " "'final_success' or 'window_success'."
-    )
+from network_dynamics.core.results import BasinSummary
+from network_dynamics.core.sampling import trial_seeds
+from network_dynamics.cpu.integration import integrate_from_config
 
 
 def run_single_trial(config, trial_seed):
     """
-    Run one basin-stability trial.
-
-    Returns
-    -------
-    TrialResult
-        Result object for one trial.
+    Sample, integrate, and classify one CPU basin-stability trial.
     """
 
     try:
@@ -93,82 +34,47 @@ def run_single_trial(config, trial_seed):
             trial_seed=trial_seed,
         )
 
-        sol, t = integrate(
-            G=config.G,
-            initial_conditions=initial_condition,
-            parameters=config.parameters,
-            coupling_strength=config.coupling_strength,
-            H=config.H,
-            tmax=config.tmax,
-            dt=config.dt,
-            dimension=config.dimension,
-            integrator=config.integrator,
-        )
-
-        health = solution_health(
-            sol,
-            max_abs_threshold=config.max_abs_threshold,
-        )
-
-        if not is_solution_valid(health):
-            return TrialResult(
-                trial_seed=trial_seed,
-                success=False,
-                final_success=False,
-                window_success=False,
-                integration_failed=True,
-                final_distance=None,
-                window_max_distance=None,
-                sync_time=None,
-                error=format_health_message(health),
-            )
-
-        sync_metrics = analyze_synchronization(
-            sol=sol,
-            t=t,
-            dimension=config.dimension,
-            tol=config.sync_tol,
-            tol_max=config.tol_max,
-            win_frac=config.window_fraction,
-        )
-
-        success = choose_success(
-            sync_metrics=sync_metrics,
-            success_definition=config.success_definition,
-        )
-
-        return TrialResult(
+        return run_single_trial_from_initial_condition(
+            config=config,
             trial_seed=trial_seed,
-            success=bool(success),
-            final_success=bool(sync_metrics["final_success"]),
-            window_success=bool(sync_metrics["window_success"]),
-            integration_failed=False,
-            final_distance=sync_metrics["final_distance"],
-            window_max_distance=sync_metrics["window_max_distance"],
-            sync_time=sync_metrics["sync_time"],
-            error=None,
+            initial_condition=initial_condition,
         )
 
     except Exception as error:
-        return TrialResult(
+        return failed_trial_result(
             trial_seed=trial_seed,
-            success=False,
-            final_success=False,
-            window_success=False,
-            integration_failed=True,
-            final_distance=None,
-            window_max_distance=None,
-            sync_time=None,
+            error=str(error),
+        )
+
+
+def run_single_trial_from_initial_condition(config, trial_seed, initial_condition):
+    """
+    Integrate and classify one CPU trial from a fixed initial condition.
+    """
+
+    try:
+        sol, t = integrate_from_config(
+            config=config,
+            initial_conditions=initial_condition,
+        )
+
+        return classify_solution(
+            config=config,
+            trial_seed=trial_seed,
+            sol=sol,
+            t=t,
+        )
+
+    except Exception as error:
+        return failed_trial_result(
+            trial_seed=trial_seed,
             error=str(error),
         )
 
 
 def _run_trial_from_settings(settings):
     """
-    Helper for multiprocessing.
-
-    ProcessPoolExecutor needs a top-level function that can be imported
-    by worker processes.
+    Top-level multiprocessing adapter for sampled trials.
     """
 
     return run_single_trial(
@@ -177,52 +83,147 @@ def _run_trial_from_settings(settings):
     )
 
 
-def basin_stability_serial(config):
+def _run_trial_from_initial_condition_settings(settings):
     """
-    Run a serial basin-stability experiment.
+    Top-level multiprocessing adapter for fixed initial-condition trials.
+    """
 
-    Parameters
-    ----------
-    config : BasinConfig
-        Experiment configuration.
+    return run_single_trial_from_initial_condition(
+        config=settings["config"],
+        trial_seed=settings["trial_seed"],
+        initial_condition=settings["initial_condition"],
+    )
 
-    Returns
-    -------
-    BasinSummary
-        Summary object containing counts and trial results.
+
+def _print_progress(
+    completed,
+    total,
+    start_time,
+    label,
+    progress_stream,
+):
+    elapsed = time.perf_counter() - start_time
+    rate = completed / elapsed if elapsed > 0 else 0.0
+    remaining = total - completed
+    eta = remaining / rate if rate > 0 else float("inf")
+
+    print(
+        f"{label}: {completed}/{total} trials "
+        f"({100.0 * completed / total:.1f}%) | "
+        f"{rate:.2f} trials/s | ETA {eta / 60.0:.1f} min",
+        file=progress_stream,
+        flush=True,
+    )
+
+
+def _map_trials(
+    trial_settings,
+    worker_function,
+    n_workers=None,
+    progress_label=None,
+    progress_interval=100,
+    progress_stream=None,
+):
+    total = len(trial_settings)
+    progress_stream = progress_stream or sys.stdout
+    progress_interval = max(1, int(progress_interval))
+    start_time = time.perf_counter()
+
+    def maybe_print_progress(completed):
+        if progress_label is None:
+            return
+
+        if completed == total or completed % progress_interval == 0:
+            _print_progress(
+                completed=completed,
+                total=total,
+                start_time=start_time,
+                label=progress_label,
+                progress_stream=progress_stream,
+            )
+
+    if n_workers is None or n_workers <= 1:
+        results = []
+
+        for completed, settings in enumerate(trial_settings, start=1):
+            results.append(worker_function(settings))
+            maybe_print_progress(completed)
+
+        return results
+
+    with ProcessPoolExecutor(max_workers=n_workers) as executor:
+        future_to_index = {
+            executor.submit(worker_function, settings): trial_index
+            for trial_index, settings in enumerate(trial_settings)
+        }
+        results = [None] * total
+
+        for completed, future in enumerate(as_completed(future_to_index), start=1):
+            trial_index = future_to_index[future]
+            results[trial_index] = future.result()
+            maybe_print_progress(completed)
+
+    return results
+
+
+def basin_stability_cpu_from_initial_conditions(
+    config,
+    initial_conditions_batch,
+    seeds=None,
+    progress_label=None,
+    progress_interval=100,
+    progress_stream=None,
+):
+    """
+    Run CPU basin stability from fixed initial conditions.
+
+    This is the validation path for exact CPU/GPU comparisons.
     """
 
     config.validate()
 
-    seeds = trial_seeds(
-        base_seed=config.base_seed,
-        n_trials=config.n_trials,
+    initial_conditions_batch = validate_initial_conditions_batch(
+        config=config,
+        initial_conditions_batch=initial_conditions_batch,
+        dtype=float,
     )
 
-    results = []
-
-    for seed in seeds:
-        result = run_single_trial(
-            config=config,
-            trial_seed=seed,
+    if seeds is None:
+        seeds = trial_seeds(
+            base_seed=config.base_seed,
+            n_trials=config.n_trials,
         )
-        results.append(result)
+    else:
+        seeds = list(seeds)
 
-    summary = BasinSummary.from_results(
+    trial_settings = [
+        {
+            "config": config,
+            "trial_seed": seeds[trial_index],
+            "initial_condition": initial_conditions_batch[trial_index],
+        }
+        for trial_index in range(config.n_trials)
+    ]
+
+    results = _map_trials(
+        trial_settings=trial_settings,
+        worker_function=_run_trial_from_initial_condition_settings,
+        n_workers=config.n_workers,
+        progress_label=progress_label,
+        progress_interval=progress_interval,
+        progress_stream=progress_stream,
+    )
+
+    return BasinSummary.from_results(
         config=config,
         seeds=seeds,
         results=results,
     )
 
-    return summary
 
-
-def basin_stability_cpu(config):
+def basin_stability_serial(config):
     """
-    Run a parallel CPU basin-stability experiment.
-
-    Each basin trial is independent, so multiprocessing can distribute
-    trials across CPU worker processes.
+    Run a serial CPU basin-stability experiment.
     """
 
     config.validate()
@@ -231,7 +232,6 @@ def basin_stability_cpu(config):
         base_seed=config.base_seed,
         n_trials=config.n_trials,
     )
-
     trial_settings = [
         {
             "config": config,
@@ -240,21 +240,49 @@ def basin_stability_cpu(config):
         for seed in seeds
     ]
 
-    with ProcessPoolExecutor(max_workers=config.n_workers) as executor:
-        results = list(
-            executor.map(
-                _run_trial_from_settings,
-                trial_settings,
-            )
-        )
+    results = _map_trials(
+        trial_settings=trial_settings,
+        worker_function=_run_trial_from_settings,
+        n_workers=1,
+    )
 
-    summary = BasinSummary.from_results(
+    return BasinSummary.from_results(
         config=config,
         seeds=seeds,
         results=results,
     )
 
-    return summary
+
+def basin_stability_cpu(config):
+    """
+    Run a multiprocessing CPU basin-stability experiment.
+    """
+
+    config.validate()
+
+    seeds = trial_seeds(
+        base_seed=config.base_seed,
+        n_trials=config.n_trials,
+    )
+    trial_settings = [
+        {
+            "config": config,
+            "trial_seed": seed,
+        }
+        for seed in seeds
+    ]
+
+    results = _map_trials(
+        trial_settings=trial_settings,
+        worker_function=_run_trial_from_settings,
+        n_workers=config.n_workers,
+    )
+
+    return BasinSummary.from_results(
+        config=config,
+        seeds=seeds,
+        results=results,
+    )
 
 
 def print_basin_summary(summary):
@@ -276,8 +304,7 @@ def print_basin_summary(summary):
 
 def print_trial_results(summary):
     """
-    Print one line per trial.
-    Useful while debugging.
+    Print one line per trial for debugging.
     """
 
     print()
@@ -292,5 +319,6 @@ def print_trial_results(summary):
             f"window_success={result.window_success} | "
             f"integration_failed={result.integration_failed} | "
             f"final_distance={result.final_distance} | "
+            f"min_distance={result.min_distance} | "
             f"error={result.error}"
         )

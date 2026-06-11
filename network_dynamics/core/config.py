@@ -10,6 +10,8 @@ from typing import Optional, Sequence, Tuple
 import numpy as np
 import networkx as nx
 
+from network_dynamics.core.basin_common import SUCCESS_DEFINITIONS
+
 
 @dataclass
 class BasinConfig:
@@ -133,13 +135,10 @@ class BasinConfig:
         if not (0 < self.window_fraction <= 1):
             raise ValueError("window_fraction must satisfy 0 < window_fraction <= 1.")
 
-        if self.success_definition not in (
-            "final_success",
-            "window_success",
-        ):
+        if self.success_definition not in SUCCESS_DEFINITIONS:
             raise ValueError(
-                "success_definition must be either "
-                "'final_success' or 'window_success'."
+                "success_definition must be one of: "
+                "'final_success', 'window_success', or 'first_crossing'."
             )
 
         if self.max_abs_threshold <= 0:

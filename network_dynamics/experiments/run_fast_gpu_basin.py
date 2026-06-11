@@ -24,6 +24,10 @@ import networkx as nx
 
 from network_dynamics.core.config import BasinConfig
 from network_dynamics.cpu.basin import print_basin_summary
+from network_dynamics.experiments.experiment_io import (
+    OUTPUT_PATH,
+    run_with_output_file,
+)
 from network_dynamics.gpu.basin_fast import basin_stability_gpu_fast
 
 
@@ -112,7 +116,7 @@ def print_first_trials(summary, n=10):
         )
 
 
-def main():
+def run_experiment():
     config = make_config()
 
     print_config(config)
@@ -131,6 +135,11 @@ def main():
         summary=summary,
         n=10,
     )
+
+
+def main():
+    run_with_output_file(run_experiment)
+    print(f"Wrote fast GPU output to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

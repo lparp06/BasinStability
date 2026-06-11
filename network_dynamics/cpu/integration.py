@@ -204,3 +204,21 @@ def integrate(
         )
 
     raise ValueError("Unknown integrator. Use integrator='LSODA' or integrator='RK4'.")
+
+
+def integrate_from_config(config, initial_conditions):
+    """
+    Integrate one trajectory using a BasinConfig.
+    """
+
+    return integrate(
+        G=config.G,
+        initial_conditions=initial_conditions,
+        parameters=config.parameters,
+        coupling_strength=config.coupling_strength,
+        H=config.H,
+        tmax=config.tmax,
+        dt=config.dt,
+        dimension=config.dimension,
+        integrator=config.integrator,
+    )

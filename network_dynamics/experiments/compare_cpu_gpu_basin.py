@@ -25,6 +25,10 @@ from network_dynamics.cpu.basin import (
     basin_stability_serial,
     print_basin_summary,
 )
+from network_dynamics.experiments.experiment_io import (
+    OUTPUT_PATH,
+    run_with_output_file,
+)
 from network_dynamics.gpu.basin import basin_stability_gpu
 
 
@@ -155,41 +159,37 @@ def compare_summaries(cpu_summary, gpu_summary):
         print("That is acceptable if the basin-stability difference is small.")
 
 
-def print_mismatched_trials(cpu_summary, gpu_summary):
+def print_mismatch_summary(cpu_summary, gpu_summary):
     """
-    Print trials where CPU and GPU success classifications differ.
+    Print aggregate CPU/GPU mismatch information.
     """
 
     print()
-    print("Mismatched trials")
+    print("Mismatch summary")
     print("-" * 40)
 
-    mismatch_count = 0
+    mismatches = [
+        (cpu_result, gpu_result)
+        for cpu_result, gpu_result in zip(cpu_summary.results, gpu_summary.results)
+        if cpu_result.success != gpu_result.success
+    ]
 
-    for cpu_result, gpu_result in zip(cpu_summary.results, gpu_summary.results):
-        if cpu_result.success != gpu_result.success:
-            mismatch_count += 1
+    print(f"Total mismatches: {len(mismatches)}")
 
-            print(f"seed={cpu_result.trial_seed}")
-            print(f"  CPU success: {cpu_result.success}")
-            print(f"  GPU success: {gpu_result.success}")
-            print(f"  CPU final_success: {cpu_result.final_success}")
-            print(f"  GPU final_success: {gpu_result.final_success}")
-            print(f"  CPU window_success: {cpu_result.window_success}")
-            print(f"  GPU window_success: {gpu_result.window_success}")
-            print(f"  CPU final_distance: {cpu_result.final_distance}")
-            print(f"  GPU final_distance: {gpu_result.final_distance}")
-            print(f"  CPU window_max_distance: {cpu_result.window_max_distance}")
-            print(f"  GPU window_max_distance: {gpu_result.window_max_distance}")
-            print()
+    if not mismatches:
+        return
 
-    if mismatch_count == 0:
-        print("No mismatches.")
-    else:
-        print(f"Total mismatches: {mismatch_count}")
+    cpu_success_gpu_failure = sum(
+        cpu_result.success and not gpu_result.success
+        for cpu_result, gpu_result in mismatches
+    )
+    gpu_success_cpu_failure = len(mismatches) - cpu_success_gpu_failure
+
+    print("CPU success / GPU failure:", cpu_success_gpu_failure)
+    print("GPU success / CPU failure:", gpu_success_cpu_failure)
 
 
-def main():
+def run_comparison():
     cpu_config = make_config(backend="serial")
     gpu_config = make_config(backend="gpu")
 
@@ -236,10 +236,15 @@ def main():
         gpu_summary=gpu_summary,
     )
 
-    print_mismatched_trials(
+    print_mismatch_summary(
         cpu_summary=cpu_summary,
         gpu_summary=gpu_summary,
     )
+
+
+def main():
+    run_with_output_file(run_comparison)
+    print(f"Wrote CPU/GPU comparison output to {OUTPUT_PATH}")
 
 
 if __name__ == "__main__":

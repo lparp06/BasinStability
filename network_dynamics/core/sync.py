@@ -174,6 +174,8 @@ def is_synchronized_over_win(sol, dimension=3, tol=1e-3, win_frac=0.2):
 def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac=0.2):
     """
     Compute synchronization metrics for one trajectory.
+
+    first_crossing success is determined by whether min_distance < tol.
     """
 
     sol = np.asarray(sol)
@@ -191,6 +193,7 @@ def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac
     )
 
     final_distance = float(distances[-1])
+    min_distance = float(np.min(distances))
 
     window_start = int((1.0 - win_frac) * len(distances))
     window_distances = distances[window_start:]
@@ -198,6 +201,7 @@ def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac
 
     final_success = final_distance < tol
     window_success = window_max_distance < tol
+    first_crossing_success = min_distance < tol
 
     sync_time = np.inf
 
@@ -213,7 +217,9 @@ def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac
     return {
         "final_distance": final_distance,
         "window_max_distance": window_max_distance,
+        "min_distance": min_distance,
         "sync_time": sync_time,
         "final_success": final_success,
         "window_success": window_success,
+        "first_crossing_success": first_crossing_success,
     }

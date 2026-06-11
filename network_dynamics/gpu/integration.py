@@ -11,6 +11,7 @@ from jax import lax
 
 from network_dynamics.core.graphs import graph_laplacian
 from network_dynamics.core.coupling import build_coupling_matrix
+from network_dynamics.gpu.dynamics import rk4_step_batch_jax
 
 
 def rossler_jax(state_vector, coupling_matrix, parameters):
@@ -210,14 +211,11 @@ def integrate_rk4_batch_scan_jax(
     """
 
     def step_function(state_batch, _):
-        next_state_batch = jax.vmap(
-            rk4_step_jax,
-            in_axes=(0, None, None, None),
-        )(
-            state_batch,
-            dt,
-            coupling_matrix,
-            parameters,
+        next_state_batch = rk4_step_batch_jax(
+            state_batch=state_batch,
+            dt=dt,
+            coupling_matrix=coupling_matrix,
+            parameters=parameters,
         )
         return next_state_batch, next_state_batch
 
@@ -330,3 +328,25 @@ def integrate_rk4_batch_jax(
         return np.asarray(sol_batch), t
 
     return sol_batch, jnp.asarray(t)
+
+
+def integrate_rk4_batch_from_config(
+    config,
+    initial_conditions_batch,
+    return_numpy=True,
+):
+    """
+    Integrate a batch of trajectories using the values in a BasinConfig.
+    """
+
+    return integrate_rk4_batch_jax(
+        G=config.G,
+        initial_conditions_batch=initial_conditions_batch,
+        parameters=config.parameters,
+        coupling_strength=config.coupling_strength,
+        H=config.H,
+        tmax=config.tmax,
+        dt=config.dt,
+        dimension=config.dimension,
+        return_numpy=return_numpy,
+    )
