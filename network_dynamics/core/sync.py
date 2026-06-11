@@ -1,23 +1,13 @@
 """
-Given a trajectory sol and time vector t,
-how synchronized are the oscillators?
+sync.py
 
-For a network of oscillators, synchronization means
-all nodes have approximately the same state
+Synchronization diagnostics for oscillator trajectories.
 
-For Rössler oscillators, each node has
-(x_i, y_i, z_i)
+State layout:
+    [x0, y0, z0, x1, y1, z1, ...]
 
-If node 0 and node 1 are synchronized, then
-    x_0 ≈ x_1
-    y_0 ≈ y_1
-    z_0 ≈ z_1
-
-- A common test is the maximum pairwise distance
-    Look at every pair of nodes
-    Measure how far apart their states are
-    Take the maximum distance
-    If it is below sync_tol, call the system synchronized
+Synchronization is measured using the maximum pairwise distance between
+node states at each time point.
 """
 
 import numpy as np
@@ -26,13 +16,7 @@ from scipy.spatial.distance import pdist
 
 def reshape_state_by_node(state_vector, dimension=3):
     """
-    Take one flat state vector and reshape it into one row per oscillator.
-
-    Example:
-        [x0, y0, z0, x1, y1, z1]
-    becomes:
-        [[x0, y0, z0],
-         [x1, y1, z1]]
+    Reshape one flat state vector into one row per oscillator.
     """
 
     state_vector = np.asarray(state_vector)
@@ -52,28 +36,90 @@ def reshape_state_by_node(state_vector, dimension=3):
 
 
 def max_pairwise_distance(state_vector, dimension=3):
-    state_by_node = reshape_state_by_node(state_vector, dimension)
+    """
+    Compute the maximum pairwise distance between oscillator states.
+    """
+
+    state_by_node = reshape_state_by_node(
+        state_vector=state_vector,
+        dimension=dimension,
+    )
 
     if state_by_node.shape[0] <= 1:
         return 0.0
 
     distances = pdist(state_by_node)
+
     return float(distances.max())
 
 
+def distance_time_series(sol, dimension=3):
+    """
+    Compute the maximum pairwise distance at every time point.
+    """
+
+    sol = np.asarray(sol)
+
+    if sol.ndim != 2:
+        raise ValueError(
+            "sol must be two-dimensional with shape "
+            "(n_time_points, state_dimension). "
+            f"Got shape {sol.shape}."
+        )
+
+    distances = np.array(
+        [
+            max_pairwise_distance(
+                state_vector=state,
+                dimension=dimension,
+            )
+            for state in sol
+        ],
+        dtype=float,
+    )
+
+    return distances
+
+
 def final_max_pwd(sol, dimension=3):
-    final_state = sol[-1]
-    max_pwd_final = max_pairwise_distance(final_state, dimension)
-    return max_pwd_final
+    """
+    Maximum pairwise distance at the final time point.
+    """
+
+    distances = distance_time_series(
+        sol=sol,
+        dimension=dimension,
+    )
+
+    return float(distances[-1])
+
+
+def max_distance_over_final_window(sol, dimension=3, win_frac=0.2):
+    """
+    Maximum pairwise distance over the final fraction of the trajectory.
+    """
+
+    if not 0 < win_frac <= 1:
+        raise ValueError("win_frac must be in the interval (0, 1]. " f"Got {win_frac}.")
+
+    distances = distance_time_series(
+        sol=sol,
+        dimension=dimension,
+    )
+
+    window_start = int((1.0 - win_frac) * len(distances))
+    window_distances = distances[window_start:]
+
+    return float(np.max(window_distances))
 
 
 def time_to_sync(sol, t, dimension=3, tol=1e-3, tol_max=1e6):
     """
     Return the first time at which the oscillators become synchronized.
-
-    Returns np.inf if synchronization never occurs or if the pairwise
-    distance exceeds tol_max.
     """
+
+    sol = np.asarray(sol)
+    t = np.asarray(t)
 
     if len(sol) != len(t):
         raise ValueError(
@@ -81,65 +127,92 @@ def time_to_sync(sol, t, dimension=3, tol=1e-3, tol_max=1e6):
             f"Got len(sol)={len(sol)} and len(t)={len(t)}."
         )
 
-    for i in range(len(t)):
-        state = sol[i]
-        max_pwd = max_pairwise_distance(state, dimension)
+    distances = distance_time_series(
+        sol=sol,
+        dimension=dimension,
+    )
 
-        if max_pwd < tol:
+    for i, distance in enumerate(distances):
+        if distance < tol:
             return float(t[i])
 
-        if max_pwd > tol_max:
+        if distance > tol_max:
             return np.inf
 
     return np.inf
 
 
-# Final state synchronization check
-
-
 def is_synchronized_final(sol, dimension=3, tol=1e-3):
-    return final_max_pwd(sol, dimension) < tol
+    """
+    Check synchronization only at the final time point.
+    """
+
+    return (
+        final_max_pwd(
+            sol=sol,
+            dimension=dimension,
+        )
+        < tol
+    )
 
 
 def is_synchronized_over_win(sol, dimension=3, tol=1e-3, win_frac=0.2):
     """
-    Check whether the oscillators are synchronized over the final window
-    of the trajectory.
+    Check whether the oscillators are synchronized over the final window.
     """
 
-    if not 0 < win_frac <= 1:
-        raise ValueError("win_frac must be in the interval (0, 1]. " f"Got {win_frac}.")
-
-    window_start = int((1 - win_frac) * len(sol))
-    final_window = sol[window_start:]
-
-    for state in final_window:
-        distance = max_pairwise_distance(state, dimension)
-
-        if distance >= tol:
-            return False
-
-    return True
+    return (
+        max_distance_over_final_window(
+            sol=sol,
+            dimension=dimension,
+            win_frac=win_frac,
+        )
+        < tol
+    )
 
 
 def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac=0.2):
     """
-    Compute all synchronization metrics for one trajectory
+    Compute synchronization metrics for one trajectory.
     """
-    final_distance = final_max_pwd(sol, dimension)
 
-    sync_time = time_to_sync(
-        sol=sol, t=t, dimension=dimension, tol=tol, tol_max=tol_max
+    sol = np.asarray(sol)
+    t = np.asarray(t)
+
+    if len(sol) != len(t):
+        raise ValueError(
+            "sol and t must have the same length along the time axis. "
+            f"Got len(sol)={len(sol)} and len(t)={len(t)}."
+        )
+
+    distances = distance_time_series(
+        sol=sol,
+        dimension=dimension,
     )
 
-    final_success = is_synchronized_final(sol=sol, dimension=dimension, tol=tol)
+    final_distance = float(distances[-1])
 
-    window_success = is_synchronized_over_win(
-        sol=sol, dimension=dimension, tol=tol, win_frac=win_frac
-    )
+    window_start = int((1.0 - win_frac) * len(distances))
+    window_distances = distances[window_start:]
+    window_max_distance = float(np.max(window_distances))
+
+    final_success = final_distance < tol
+    window_success = window_max_distance < tol
+
+    sync_time = np.inf
+
+    for i, distance in enumerate(distances):
+        if distance < tol:
+            sync_time = float(t[i])
+            break
+
+        if distance > tol_max:
+            sync_time = np.inf
+            break
 
     return {
         "final_distance": final_distance,
+        "window_max_distance": window_max_distance,
         "sync_time": sync_time,
         "final_success": final_success,
         "window_success": window_success,

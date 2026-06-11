@@ -118,6 +118,7 @@ def run_single_trial(config, trial_seed):
                 window_success=False,
                 integration_failed=True,
                 final_distance=None,
+                window_max_distance=None,
                 sync_time=None,
                 error=format_health_message(health),
             )
@@ -143,6 +144,7 @@ def run_single_trial(config, trial_seed):
             window_success=bool(sync_metrics["window_success"]),
             integration_failed=False,
             final_distance=sync_metrics["final_distance"],
+            window_max_distance=sync_metrics["window_max_distance"],
             sync_time=sync_metrics["sync_time"],
             error=None,
         )
@@ -155,6 +157,7 @@ def run_single_trial(config, trial_seed):
             window_success=False,
             integration_failed=True,
             final_distance=None,
+            window_max_distance=None,
             sync_time=None,
             error=str(error),
         )

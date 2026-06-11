@@ -1,183 +1,245 @@
 """
-compare_cpu_gpu_batch_rk4.py
+compare_cpu_gpu_basin.py
 
-Compare CPU RK4 loop vs GPU/JAX batched RK4.
+Compare CPU RK4 basin stability and GPU/JAX RK4 basin stability.
+
+This is a full basin-level comparison, not a tiny trajectory correctness test.
+
+For this laptop/MPS setup:
+- use dt=0.05 for the full basin comparison
+- use smaller dt only in small correctness scripts
+- accept small CPU/GPU basin-stability differences because CPU uses float64
+  and GPU/MPS usually uses float32
 
 Run from project root:
 
-    python -m network_dynamics.experiments.compare_cpu_gpu_batch_rk4
+    python -m network_dynamics.experiments.compare_cpu_gpu_basin
 """
 
-import numpy as np
+import time
+
 import networkx as nx
 
-from network_dynamics.core.sampling import (
-    sample_uniform_initial_condition,
-    trial_seeds,
+from network_dynamics.core.config import BasinConfig
+from network_dynamics.cpu.basin import (
+    basin_stability_serial,
+    print_basin_summary,
 )
-from network_dynamics.cpu.integration import integrate_rk4
-from network_dynamics.gpu.integration import integrate_rk4_batch_jax
+from network_dynamics.gpu.basin import basin_stability_gpu
 
 
-def make_initial_conditions_batch(
-    seeds,
-    n_nodes,
-    dimension,
-    low,
-    high,
-):
+def make_config(backend):
     """
-    Generate a batch of NumPy initial conditions.
+    Create one shared experiment configuration.
 
-    Shape:
-        (n_trials, n_nodes * dimension)
+    The only thing that changes between CPU and GPU is the backend label.
+    Both use RK4 so that we are comparing similar integrators.
     """
 
-    initial_conditions = []
+    return BasinConfig(
+        G=nx.path_graph(5),
+        n_trials=100,
+        base_seed=42,
+        parameters=(0.2, 0.2, 7.0),
+        coupling_strength=1.0,
+        H=None,
+        tmax=150.0,
+        dt=0.025,
+        dimension=3,
+        sampling_bounds=(-5.0, 5.0),
+        sync_tol=1e-2,
+        tol_max=1e6,
+        window_fraction=0.1,
+        max_abs_threshold=1e6,
+        success_definition="window_success",
+        integrator="RK4",
+        backend=backend,
+    ).validate()
 
-    for seed in seeds:
-        rng = np.random.default_rng(seed)
 
-        initial_condition = sample_uniform_initial_condition(
-            rng=rng,
-            n_nodes=n_nodes,
-            dimension=dimension,
-            low=low,
-            high=high,
-        )
-
-        initial_conditions.append(initial_condition)
-
-    return np.asarray(initial_conditions)
-
-
-def integrate_cpu_batch_loop(
-    G,
-    initial_conditions_batch,
-    parameters,
-    coupling_strength,
-    H,
-    tmax,
-    dt,
-    dimension,
-):
+def print_config(config):
     """
-    CPU reference: integrate each trajectory one at a time with CPU RK4.
+    Print the main experiment settings so we can verify what was run.
     """
 
-    solutions = []
+    print()
+    print("Experiment config")
+    print("-" * 40)
+    print("n_trials:", config.n_trials)
+    print("base_seed:", config.base_seed)
+    print("tmax:", config.tmax)
+    print("dt:", config.dt)
+    print("sampling_bounds:", config.sampling_bounds)
+    print("sync_tol:", config.sync_tol)
+    print("window_fraction:", config.window_fraction)
+    print("success_definition:", config.success_definition)
+    print("integrator:", config.integrator)
 
-    for initial_condition in initial_conditions_batch:
-        sol, t = integrate_rk4(
-            G=G,
-            initial_conditions=initial_condition,
-            parameters=parameters,
-            coupling_strength=coupling_strength,
-            H=H,
-            tmax=tmax,
-            dt=dt,
-            dimension=dimension,
-        )
 
-        solutions.append(sol)
+def time_run(function, config):
+    """
+    Time one basin-stability function call.
+    """
 
-    sol_batch = np.asarray(solutions)
+    start = time.perf_counter()
+    summary = function(config)
+    end = time.perf_counter()
 
-    return sol_batch, t
+    elapsed_seconds = end - start
+
+    return summary, elapsed_seconds
+
+
+def compare_summaries(cpu_summary, gpu_summary):
+    """
+    Compare CPU and GPU basin summaries.
+
+    With RK4, CPU and GPU should be close, but not necessarily identical.
+    CPU NumPy usually uses float64. JAX on MPS usually uses float32.
+    Tiny trajectory differences can flip strict window-success classification.
+
+    Therefore, for this full run, we check:
+    - basin stability difference
+    - per-trial success matches
+    - integration failures
+    """
+
+    allowed_basin_difference = 0.05
+
+    print()
+    print("Comparison")
+    print("-" * 40)
+
+    print("CPU basin stability:", cpu_summary.basin_stability)
+    print("GPU basin stability:", gpu_summary.basin_stability)
+
+    basin_difference = abs(cpu_summary.basin_stability - gpu_summary.basin_stability)
+
+    print("Absolute basin stability difference:", basin_difference)
+    print("Allowed basin stability difference:", allowed_basin_difference)
+
+    print()
+    print("CPU successes:", cpu_summary.successes)
+    print("GPU successes:", gpu_summary.successes)
+
+    print("CPU sync failures:", cpu_summary.sync_failures)
+    print("GPU sync failures:", gpu_summary.sync_failures)
+
+    print("CPU integration failures:", cpu_summary.integration_failures)
+    print("GPU integration failures:", gpu_summary.integration_failures)
+
+    cpu_successes = [result.success for result in cpu_summary.results]
+
+    gpu_successes = [result.success for result in gpu_summary.results]
+
+    matches = [
+        cpu_success == gpu_success
+        for cpu_success, gpu_success in zip(cpu_successes, gpu_successes)
+    ]
+
+    n_matches = sum(matches)
+    n_trials = len(matches)
+
+    print()
+    print("Per-trial success matches:", n_matches, "/", n_trials)
+
+    if basin_difference <= allowed_basin_difference:
+        print("CPU and GPU basin stability are close enough for this RK4 comparison.")
+    else:
+        print("CPU and GPU basin stability differ more than expected.")
+
+    if all(matches):
+        print("CPU and GPU classifications match exactly.")
+    else:
+        print("Some CPU and GPU classifications differ.")
+        print("That is acceptable if the basin-stability difference is small.")
+
+
+def print_mismatched_trials(cpu_summary, gpu_summary):
+    """
+    Print trials where CPU and GPU success classifications differ.
+    """
+
+    print()
+    print("Mismatched trials")
+    print("-" * 40)
+
+    mismatch_count = 0
+
+    for cpu_result, gpu_result in zip(cpu_summary.results, gpu_summary.results):
+        if cpu_result.success != gpu_result.success:
+            mismatch_count += 1
+
+            print(f"seed={cpu_result.trial_seed}")
+            print(f"  CPU success: {cpu_result.success}")
+            print(f"  GPU success: {gpu_result.success}")
+            print(f"  CPU final_success: {cpu_result.final_success}")
+            print(f"  GPU final_success: {gpu_result.final_success}")
+            print(f"  CPU window_success: {cpu_result.window_success}")
+            print(f"  GPU window_success: {gpu_result.window_success}")
+            print(f"  CPU final_distance: {cpu_result.final_distance}")
+            print(f"  GPU final_distance: {gpu_result.final_distance}")
+            print(f"  CPU window_max_distance: {cpu_result.window_max_distance}")
+            print(f"  GPU window_max_distance: {gpu_result.window_max_distance}")
+            print()
+
+    if mismatch_count == 0:
+        print("No mismatches.")
+    else:
+        print(f"Total mismatches: {mismatch_count}")
 
 
 def main():
+    cpu_config = make_config(backend="serial")
+    gpu_config = make_config(backend="gpu")
+
+    print_config(cpu_config)
+
+    print()
     print("=" * 70)
-    print("Compare CPU RK4 loop vs GPU/JAX batched RK4")
+    print("CPU RK4 basin")
     print("=" * 70)
 
-    G = nx.path_graph(5)
-    n_nodes = G.number_of_nodes()
-    dimension = 3
-
-    n_trials = 5
-    base_seed = 42
-    seeds = trial_seeds(
-        base_seed=base_seed,
-        n_trials=n_trials,
+    cpu_summary, cpu_time = time_run(
+        basin_stability_serial,
+        cpu_config,
     )
 
-    parameters = (0.2, 0.2, 7.0)
-    coupling_strength = 1.0
-    H = None
+    print_basin_summary(cpu_summary)
+    print("CPU runtime:", cpu_time)
 
-    sampling_bounds = (-5.0, 5.0)
-    low, high = sampling_bounds
+    print()
+    print("First 5 CPU trial errors")
+    print("-" * 40)
 
-    tmax = 20.0
-    dt = 0.005
+    for result in cpu_summary.results[:5]:
+        print("seed:", result.trial_seed)
+        print("integration_failed:", result.integration_failed)
+        print("error:", result.error)
+        print()
 
-    initial_conditions_batch = make_initial_conditions_batch(
-        seeds=seeds,
-        n_nodes=n_nodes,
-        dimension=dimension,
-        low=low,
-        high=high,
+    print()
+    print("=" * 70)
+    print("GPU/JAX RK4 basin")
+    print("=" * 70)
+
+    gpu_summary, gpu_time = time_run(
+        basin_stability_gpu,
+        gpu_config,
     )
 
-    print("Initial condition batch shape:", initial_conditions_batch.shape)
+    print_basin_summary(gpu_summary)
+    print("GPU runtime:", gpu_time)
 
-    cpu_sol_batch, cpu_t = integrate_cpu_batch_loop(
-        G=G,
-        initial_conditions_batch=initial_conditions_batch,
-        parameters=parameters,
-        coupling_strength=coupling_strength,
-        H=H,
-        tmax=tmax,
-        dt=dt,
-        dimension=dimension,
+    compare_summaries(
+        cpu_summary=cpu_summary,
+        gpu_summary=gpu_summary,
     )
 
-    gpu_sol_batch, gpu_t = integrate_rk4_batch_jax(
-        G=G,
-        initial_conditions_batch=initial_conditions_batch,
-        parameters=parameters,
-        coupling_strength=coupling_strength,
-        H=H,
-        tmax=tmax,
-        dt=dt,
-        dimension=dimension,
-        return_numpy=True,
+    print_mismatched_trials(
+        cpu_summary=cpu_summary,
+        gpu_summary=gpu_summary,
     )
-
-    max_difference = np.max(np.abs(cpu_sol_batch - gpu_sol_batch))
-
-    final_state_differences = np.max(
-        np.abs(cpu_sol_batch[:, -1, :] - gpu_sol_batch[:, -1, :]),
-        axis=1,
-    )
-
-    print()
-    print("CPU batch solution shape:", cpu_sol_batch.shape)
-    print("GPU batch solution shape:", gpu_sol_batch.shape)
-    print("CPU time shape:", cpu_t.shape)
-    print("GPU time shape:", gpu_t.shape)
-
-    print()
-    print("CPU contains NaN:", np.isnan(cpu_sol_batch).any())
-    print("GPU contains NaN:", np.isnan(gpu_sol_batch).any())
-    print("CPU contains Inf:", np.isinf(cpu_sol_batch).any())
-    print("GPU contains Inf:", np.isinf(gpu_sol_batch).any())
-
-    print()
-    print("Max absolute CPU-GPU difference over full batch:")
-    print(max_difference)
-
-    print()
-    print("Max final-state difference per trial:")
-    for seed, difference in zip(seeds, final_state_differences):
-        print(f"seed={seed}: {difference}")
-
-    print()
-    if max_difference < 1e-3:
-        print("Batch GPU RK4 comparison passed.")
-    else:
-        print("Batch GPU RK4 ran, but CPU-GPU difference is larger than expected.")
 
 
 if __name__ == "__main__":

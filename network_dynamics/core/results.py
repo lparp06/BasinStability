@@ -22,6 +22,7 @@ class TrialResult:
     window_success: bool
     integration_failed: bool
     final_distance: Optional[float]
+    window_max_distance: Optional[float]
     sync_time: Optional[float]
     error: Optional[str]
 
@@ -33,6 +34,7 @@ class TrialResult:
             "window_success": self.window_success,
             "integration_failed": self.integration_failed,
             "final_distance": self.final_distance,
+            "window_max_distance": self.window_max_distance,
             "sync_time": self.sync_time,
             "error": self.error,
         }

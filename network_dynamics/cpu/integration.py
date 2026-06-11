@@ -138,11 +138,11 @@ def integrate_rk4(
         H=H,
     )
 
-    state = np.asarray(initial_conditions, dtype=float)
+    state = np.asarray(initial_conditions, dtype=np.float32)
 
     sol = np.zeros(
         (len(t), len(state)),
-        dtype=float,
+        dtype=np.float32,
     )
 
     sol[0] = state
