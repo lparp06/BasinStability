@@ -19,6 +19,15 @@ Run from project root:
 
 import time
 import sys
+import os
+import tempfile
+from dataclasses import replace
+from pathlib import Path
+
+os.environ.setdefault(
+    "MPLCONFIGDIR",
+    str(Path(tempfile.gettempdir()) / "matplotlib-generate-dynamics"),
+)
 
 import numpy as np
 import networkx as nx
@@ -38,10 +47,13 @@ from network_dynamics.gpu.basin_fast import (
 )
 
 
+PLOT_DIR = Path(__file__).resolve().parent / "benchmark_outputs"
+
+
 def make_config(backend):
     return BasinConfig(
         G=nx.path_graph(5),
-        n_trials=5000,
+        n_trials=10000,
         base_seed=42,
         parameters=(0.2, 0.2, 7.0),
         coupling_strength=1.0,
@@ -88,6 +100,10 @@ def time_call(function, *args, **kwargs):
     end = time.perf_counter()
 
     return value, end - start
+
+
+def terminal_print(message):
+    print(message, file=sys.__stdout__, flush=True)
 
 
 def extract_min_distances(summary):
@@ -195,8 +211,51 @@ def print_first_five_errors(summary, label):
         print()
 
 
+def plot_timing_results(timing_rows, output_dir=PLOT_DIR):
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    labels = [row["label"] for row in timing_rows]
+    runtimes = [row["runtime"] for row in timing_rows]
+    throughputs = [row["n_trials"] / row["runtime"] for row in timing_rows]
+
+    runtime_path = output_dir / "validation_runtime_by_backend.png"
+    throughput_path = output_dir / "validation_throughput_by_backend.png"
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(labels, runtimes)
+    plt.title("Validation Runtime by Backend")
+    plt.xlabel("Backend")
+    plt.ylabel("Runtime (seconds)")
+    plt.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(runtime_path, dpi=200)
+    plt.close()
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(labels, throughputs)
+    plt.title("Validation Throughput by Backend")
+    plt.xlabel("Backend")
+    plt.ylabel("Trials per second")
+    plt.grid(axis="y", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(throughput_path, dpi=200)
+    plt.close()
+
+    return runtime_path, throughput_path
+
+
 def run_validation():
     cpu_config = make_config(backend="cpu")
+    serial_config = replace(
+        cpu_config,
+        backend="serial",
+        n_workers=1,
+    )
     gpu_config = make_config(backend="gpu")
 
     seeds = trial_seeds(
@@ -209,23 +268,44 @@ def run_validation():
         seeds=seeds,
     )
 
-    print("Running CPU validation...")
+    terminal_print("Starting serial CPU validation...")
+    print("Running serial CPU validation...")
+    serial_summary, serial_time = time_call(
+        basin_stability_cpu_from_initial_conditions,
+        serial_config,
+        initial_conditions_batch,
+        seeds,
+        progress_label="Serial CPU validation",
+        progress_interval=10,
+        progress_stream=sys.__stdout__,
+    )
+
+    terminal_print(f"Finished serial CPU validation in {serial_time:.3f} seconds.")
+    print_basin_summary(serial_summary)
+    print("Serial CPU time:", serial_time)
+    print_first_five_errors(serial_summary, "serial CPU")
+
+    print()
+    terminal_print("Starting parallel CPU validation...")
+    print("Running parallel CPU validation...")
 
     cpu_summary, cpu_time = time_call(
         basin_stability_cpu_from_initial_conditions,
         cpu_config,
         initial_conditions_batch,
         seeds,
-        progress_label="CPU validation",
+        progress_label="Parallel CPU validation",
         progress_interval=100,
         progress_stream=sys.__stdout__,
     )
 
+    terminal_print(f"Finished parallel CPU validation in {cpu_time:.3f} seconds.")
     print_basin_summary(cpu_summary)
-    print("CPU time:", cpu_time)
-    print_first_five_errors(cpu_summary, "CPU")
+    print("Parallel CPU time:", cpu_time)
+    print_first_five_errors(cpu_summary, "parallel CPU")
 
     print()
+    terminal_print("Starting fast GPU validation...")
     print("Running fast GPU validation using same initial conditions...")
 
     gpu_summary, gpu_time = time_call(
@@ -235,15 +315,54 @@ def run_validation():
         seeds,
     )
 
+    terminal_print(f"Finished fast GPU validation in {gpu_time:.3f} seconds.")
     print_basin_summary(gpu_summary)
     print("GPU time:", gpu_time)
     print_first_five_errors(gpu_summary, "GPU")
 
+    print()
+    print("Serial CPU vs fast GPU")
+    print("=" * 40)
+    compare(
+        cpu_summary=serial_summary,
+        gpu_summary=gpu_summary,
+        sync_tol=cpu_config.sync_tol,
+    )
+
+    print()
+    print("Parallel CPU vs fast GPU")
+    print("=" * 40)
     compare(
         cpu_summary=cpu_summary,
         gpu_summary=gpu_summary,
         sync_tol=cpu_config.sync_tol,
     )
+
+    timing_rows = [
+        {
+            "label": "Serial CPU",
+            "runtime": serial_time,
+            "n_trials": serial_summary.n_trials,
+        },
+        {
+            "label": "Parallel CPU",
+            "runtime": cpu_time,
+            "n_trials": cpu_summary.n_trials,
+        },
+        {
+            "label": "Fast GPU",
+            "runtime": gpu_time,
+            "n_trials": gpu_summary.n_trials,
+        },
+    ]
+    runtime_path, throughput_path = plot_timing_results(timing_rows)
+
+    print()
+    print("Timing plots")
+    print("-" * 40)
+    print("Runtime plot:", runtime_path)
+    print("Throughput plot:", throughput_path)
+    terminal_print(f"Saved timing plots to {PLOT_DIR}")
 
 
 def main():
