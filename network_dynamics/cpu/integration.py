@@ -146,6 +146,7 @@ def integrate_rk4(
     )
 
     sol[0] = state
+    max_float32 = np.finfo(np.float32).max
 
     for i in range(1, len(t)):
         state = rk4_step(
@@ -154,6 +155,10 @@ def integrate_rk4(
             state=state,
             dt=dt,
         )
+
+        if not np.all(np.isfinite(state)) or np.max(np.abs(state)) > max_float32:
+            sol[i:] = np.inf
+            break
 
         sol[i] = state
 

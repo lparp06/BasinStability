@@ -124,21 +124,28 @@ def failed_trial_result(trial_seed, error):
     )
 
 
+def can_ignore_post_sync_instability(config, sync_metrics):
+    """
+    Decide whether a late numerical blow-up should be ignored.
+
+    For ``first_crossing`` basin analysis, we still want a trial to count as
+    successful if the system synchronizes before the end of the run, even if
+    the trajectory becomes unstable afterward.
+    """
+
+    if config.success_definition != "first_crossing":
+        return False
+
+    return bool(
+        sync_metrics["first_crossing_success"]
+        and np.isfinite(sync_metrics["sync_time"])
+    )
+
+
 def classify_solution(config, trial_seed, sol, t):
     """
     Convert one integrated trajectory into a basin TrialResult.
     """
-
-    health = solution_health(
-        sol,
-        max_abs_threshold=config.max_abs_threshold,
-    )
-
-    if not is_solution_valid(health):
-        return failed_trial_result(
-            trial_seed=trial_seed,
-            error=format_health_message(health),
-        )
 
     sync_metrics = analyze_synchronization(
         sol=sol,
@@ -154,12 +161,28 @@ def classify_solution(config, trial_seed, sol, t):
         success_definition=config.success_definition,
     )
 
+    health = solution_health(
+        sol,
+        max_abs_threshold=config.max_abs_threshold,
+    )
+    health_valid = is_solution_valid(health)
+    ignore_late_instability = can_ignore_post_sync_instability(
+        config=config,
+        sync_metrics=sync_metrics,
+    )
+
+    if not health_valid and not ignore_late_instability:
+        return failed_trial_result(
+            trial_seed=trial_seed,
+            error=format_health_message(health),
+        )
+
     return TrialResult(
         trial_seed=trial_seed,
         success=bool(success),
         final_success=bool(sync_metrics["final_success"]),
         window_success=bool(sync_metrics["window_success"]),
-        integration_failed=False,
+        integration_failed=not health_valid and not ignore_late_instability,
         final_distance=sync_metrics["final_distance"],
         window_max_distance=sync_metrics["window_max_distance"],
         min_distance=sync_metrics["min_distance"],

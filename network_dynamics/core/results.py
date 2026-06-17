@@ -1,8 +1,4 @@
-"""
-results.py
-
-Result containers for basin-stability experiments.
-"""
+"""Result containers for basin-stability experiments."""
 
 from dataclasses import dataclass
 from typing import Optional, Any
@@ -12,9 +8,7 @@ import numpy as np
 
 @dataclass
 class TrialResult:
-    """
-    Result from one basin-stability trial.
-    """
+    """Result from one basin-stability trial."""
 
     trial_seed: int
     success: bool
@@ -44,9 +38,7 @@ class TrialResult:
 
 @dataclass
 class BasinSummary:
-    """
-    Summary from a basin-stability experiment.
-    """
+    """Summary from a basin-stability experiment."""
 
     success_definition: str
     basin_stability: float
@@ -62,32 +54,25 @@ class BasinSummary:
 
     @classmethod
     def from_results(cls, config, seeds, results):
-        """
-        Build a BasinSummary from a list of TrialResult objects.
-        """
+        """Build a BasinSummary from trial results."""
 
         successes = sum(result.success for result in results)
         integration_failures = sum(result.integration_failed for result in results)
-
         sync_failures = config.n_trials - successes - integration_failures
 
         if sync_failures < 0:
-            raise RuntimeError(
-                "Summary counts are inconsistent. "
-                "Check success and integration_failed logic."
-            )
+            raise RuntimeError("Summary counts are inconsistent.")
 
         successful_sync_times = [
             result.sync_time
             for result in results
             if result.success and result.sync_time is not None
         ]
-
-        if successful_sync_times:
-            sync_time_mean = float(np.mean(successful_sync_times))
-        else:
-            sync_time_mean = np.inf
-
+        sync_time_mean = (
+            float(np.mean(successful_sync_times))
+            if successful_sync_times
+            else np.inf
+        )
         basin_stability = successes / config.n_trials
 
         return cls(

@@ -32,8 +32,9 @@ os.environ.setdefault(
 import numpy as np
 import networkx as nx
 
+from network_dynamics.core.basin_common import sample_initial_conditions_batch
 from network_dynamics.core.config import BasinConfig
-from network_dynamics.core.sampling import sample_uniform_initial_condition, trial_seeds
+from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.cpu.basin import (
     basin_stability_cpu_from_initial_conditions,
     print_basin_summary,
@@ -71,27 +72,6 @@ def make_config(backend):
         backend=backend,
         n_workers=4,
     ).validate()
-
-
-def make_initial_conditions(config, seeds):
-    low, high = config.sampling_bounds
-
-    initial_conditions = []
-
-    for seed in seeds:
-        rng = np.random.default_rng(seed)
-
-        initial_condition = sample_uniform_initial_condition(
-            rng=rng,
-            n_nodes=config.n_nodes,
-            dimension=config.dimension,
-            low=low,
-            high=high,
-        )
-
-        initial_conditions.append(initial_condition)
-
-    return np.asarray(initial_conditions, dtype=np.float32)
 
 
 def time_call(function, *args, **kwargs):
@@ -263,7 +243,7 @@ def run_validation():
         n_trials=cpu_config.n_trials,
     )
 
-    initial_conditions_batch = make_initial_conditions(
+    initial_conditions_batch = sample_initial_conditions_batch(
         config=cpu_config,
         seeds=seeds,
     )

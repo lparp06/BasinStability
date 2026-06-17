@@ -190,8 +190,9 @@ def plot_runtime(summary_rows, output_dir):
 
     plt.title("Runtime vs Trial Count")
     plt.xlabel("Number of trials")
+    plt.xscale("log")
     plt.ylabel("Runtime (seconds)")
-    plt.grid(True, alpha=0.3)
+    plt.grid(True, alpha=0.3, which="both")
     plt.legend()
     plt.tight_layout()
 
@@ -226,8 +227,9 @@ def plot_throughput(summary_rows, output_dir):
 
     plt.title("Throughput vs Trial Count")
     plt.xlabel("Number of trials")
+    plt.xscale("log")
     plt.ylabel("Trials per second")
-    plt.grid(True, alpha=0.3)
+    plt.grid(True, alpha=0.3, which="both")
     plt.legend()
     plt.tight_layout()
 
@@ -260,9 +262,10 @@ def plot_speedup(summary_rows, output_dir, speedup_key, title, filename):
 
     plt.title(title)
     plt.xlabel("Number of trials")
+    plt.xscale("log")
     plt.ylabel("Speedup")
     plt.axhline(1.0, color="black", linewidth=1, linestyle="--")
-    plt.grid(True, alpha=0.3)
+    plt.grid(True, alpha=0.3, which="both")
     plt.legend()
     plt.tight_layout()
 

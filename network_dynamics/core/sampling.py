@@ -2,9 +2,6 @@
 Generates initial conditions for basin-stability trials
 """
 
-import numpy as np
-
-
 def sample_uniform_initial_condition(rng, n_nodes, dimension=3, low=10, high=10):
     """
     Generate one initial condition where
@@ -31,11 +28,3 @@ def trial_seeds(base_seed, n_trials):
     trials = list(range(base_seed, base_seed + n_trials))
 
     return trials
-
-
-def main():
-    print(trial_seeds(100, 5))
-
-
-if __name__ == "__main__":
-    main()

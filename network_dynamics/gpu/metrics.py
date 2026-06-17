@@ -182,8 +182,13 @@ def run_basin_metrics_jax(
     final_success = final_distance < inputs.sync_tol
     window_success = window_max_distance < inputs.sync_tol
     first_crossing_success = ever_synchronized
-    integration_failed = (~finite_seen) | (
+    health_failed = (~finite_seen) | (
         max_abs_seen > inputs.max_abs_threshold
+    )
+    integration_failed = jnp.where(
+        success_code == 2,
+        health_failed & (~first_crossing_success),
+        health_failed,
     )
 
     chosen_success = jnp.where(

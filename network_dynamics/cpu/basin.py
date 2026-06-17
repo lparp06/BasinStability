@@ -12,7 +12,6 @@ import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from network_dynamics.core.basin_common import (
-    choose_success,
     classify_solution,
     failed_trial_result,
     sample_initial_condition,

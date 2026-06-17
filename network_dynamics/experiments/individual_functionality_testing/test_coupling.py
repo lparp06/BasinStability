@@ -1,4 +1,3 @@
-import numpy as np
 import networkx as nx
 
 from network_dynamics.core.graphs import graph_laplacian

@@ -15,11 +15,9 @@ from network_dynamics.core.graphs import graph_laplacian
 from network_dynamics.core.results import BasinSummary, TrialResult
 from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.core.coupling import build_coupling_matrix
-from network_dynamics.gpu.dynamics import rossler_batch_jax, rk4_step_batch_jax
 from network_dynamics.gpu.metrics import (
     BasinMetricInputs,
     choose_success_code,
-    max_pairwise_distance_batch,
     run_basin_metrics_jax,
 )
 
@@ -104,9 +102,7 @@ def _run_fast_metrics(config, initial_states):
 
 
 def _metrics_to_summary(config, seeds, metrics):
-    """
-    Convert compact JAX metrics into TrialResult objects and BasinSummary.
-    """
+    """Convert compact JAX metrics into a BasinSummary."""
 
     metrics["success"].block_until_ready()
     metrics_np = {key: np.asarray(value) for key, value in metrics.items()}
