@@ -1,0 +1,2 @@
+created_at,a,b,c,target,source,dt,transient_time,measurement_time,qr_interval_steps,K_min,K_max,n_K,refine,tolerance,zeros_json,zero_brackets_json,stable_intervals_json
+2026-06-18T15:21:47.329661+00:00,0.20000000000000001,0.20000000000000001,9,0,0,0.050000000000000003,100,300,10,0,10,101,1,0.001,"[0.20625000000000002, 4.725]",[],[]
