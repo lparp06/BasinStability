@@ -9,33 +9,42 @@ from scipy.integrate import solve_ivp
 
 from network_dynamics.core.graphs import graph_laplacian
 from network_dynamics.core.coupling import build_coupling_matrix
-from network_dynamics.core.oscillators import rossler
+from network_dynamics.core.oscillators import get_oscillator_rhs
+
+
+def make_n_steps(tmax, dt):
+    """Compute number of time steps robustly, avoiding float-arange drift."""
+    return int(round(tmax / dt))
 
 
 def make_time_grid(tmax, dt):
     """
-    Match the original project convention:
-    include 0, exclude tmax.
+    Build time grid [0, dt, 2*dt, ...) with exactly round(tmax/dt) points.
+
+    Using integer indexing avoids float-accumulation errors that can cause
+    np.arange(0, tmax, dt) to produce n-1 or n+1 points for small dt.
     """
+    n = make_n_steps(tmax, dt)
+    return np.arange(n, dtype=np.float64) * dt
 
-    return np.arange(0.0, tmax, dt)
 
-
-def build_rhs(G, parameters, coupling_strength, H):
+def build_rhs(G, parameters, coupling_strength, H, dimension=3, dynamics="rossler"):
     """
-    Build the right-hand side function for the coupled Rössler system.
+    Build the right-hand side function for the coupled oscillator system.
     """
 
     L = graph_laplacian(G)
+    oscillator_rhs = get_oscillator_rhs(dynamics)
 
     coupling_matrix = build_coupling_matrix(
         L=L,
         H=H,
         strength=coupling_strength,
+        dimension=dimension,
     )
 
     def rhs(time, state):
-        return rossler(
+        return oscillator_rhs(
             time,
             state,
             coupling_matrix,
@@ -54,6 +63,7 @@ def integrate_lsoda(
     tmax,
     dt,
     dimension=3,
+    dynamics="rossler",
 ):
     """
     Integrate one trajectory using SciPy LSODA.
@@ -66,6 +76,8 @@ def integrate_lsoda(
         parameters=parameters,
         coupling_strength=coupling_strength,
         H=H,
+        dimension=dimension,
+        dynamics=dynamics,
     )
 
     result = solve_ivp(
@@ -116,6 +128,8 @@ def integrate_rk4(
     tmax,
     dt,
     dimension=3,
+    dynamics="rossler",
+    divergence_threshold=1e9,
 ):
     """
     Integrate one trajectory using fixed-step RK4.
@@ -136,27 +150,20 @@ def integrate_rk4(
         parameters=parameters,
         coupling_strength=coupling_strength,
         H=H,
+        dimension=dimension,
+        dynamics=dynamics,
     )
 
-    state = np.asarray(initial_conditions, dtype=np.float32)
+    state = np.asarray(initial_conditions, dtype=np.float64)
+    n_steps = len(t)
 
-    sol = np.zeros(
-        (len(t), len(state)),
-        dtype=np.float32,
-    )
-
+    sol = np.zeros((n_steps, len(state)), dtype=np.float64)
     sol[0] = state
-    max_float32 = np.finfo(np.float32).max
 
-    for i in range(1, len(t)):
-        state = rk4_step(
-            rhs=rhs,
-            time=t[i - 1],
-            state=state,
-            dt=dt,
-        )
+    for i in range(1, n_steps):
+        state = rk4_step(rhs=rhs, time=t[i - 1], state=state, dt=dt)
 
-        if not np.all(np.isfinite(state)) or np.max(np.abs(state)) > max_float32:
+        if not np.all(np.isfinite(state)) or np.max(np.abs(state)) > divergence_threshold:
             sol[i:] = np.inf
             break
 
@@ -175,6 +182,8 @@ def integrate(
     dt,
     dimension=3,
     integrator="LSODA",
+    dynamics="rossler",
+    divergence_threshold=1e9,
 ):
     """
     General integration wrapper.
@@ -194,6 +203,7 @@ def integrate(
             tmax=tmax,
             dt=dt,
             dimension=dimension,
+            dynamics=dynamics,
         )
 
     if integrator == "RK4":
@@ -206,6 +216,8 @@ def integrate(
             tmax=tmax,
             dt=dt,
             dimension=dimension,
+            dynamics=dynamics,
+            divergence_threshold=divergence_threshold,
         )
 
     raise ValueError("Unknown integrator. Use integrator='LSODA' or integrator='RK4'.")
@@ -226,4 +238,6 @@ def integrate_from_config(config, initial_conditions):
         dt=config.dt,
         dimension=config.dimension,
         integrator=config.integrator,
+        dynamics=config.dynamics,
+        divergence_threshold=getattr(config, "max_abs_threshold", 1e9),
     )

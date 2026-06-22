@@ -5,19 +5,22 @@ JAX/GPU RK4 integrator for one coupled Rössler trajectory.
 from functools import partial
 
 import numpy as np
+
+from network_dynamics.core.jax_config import enable_x64
+
+enable_x64()
+
 import jax
 import jax.numpy as jnp
 from jax import lax
 
 from network_dynamics.core.graphs import graph_laplacian
 from network_dynamics.core.coupling import build_coupling_matrix
-from network_dynamics.gpu.dynamics import rk4_step_batch_jax
+from network_dynamics.gpu.dynamics import DYNAMICS_CODES, dynamics_code, rk4_step_batch_jax
 
 
 def rossler_jax(state_vector, coupling_matrix, parameters):
-    """
-    JAX vers of the coupled Rössler derivative
-    """
+    """JAX coupled Rössler derivative for a single state vector."""
 
     a, b, c = parameters
 
@@ -25,44 +28,73 @@ def rossler_jax(state_vector, coupling_matrix, parameters):
     Y = state_vector[1::3]
     Z = state_vector[2::3]
 
-    dx = jnp.zeros_like(state_vector)
+    # Stack per-node derivatives then flatten — avoids scatter (at[].set) ops
+    dx = jnp.stack([-Y - Z, X + a * Y, b + Z * (X - c)], axis=-1).ravel()
 
-    dx = dx.at[0::3].set(-Y - Z)
-    dx = dx.at[1::3].set(X + a * Y)
-    dx = dx.at[2::3].set(b + Z * (X - c))
-
-    derivative = dx - coupling_matrix @ state_vector
-
-    return derivative
+    return dx - coupling_matrix @ state_vector
 
 
-def rk4_step_jax(state, dt, coupling_matrix, parameters):
+def lorenz_jax(state_vector, coupling_matrix, parameters):
+    """JAX coupled Lorenz derivative for a single state vector."""
+
+    sigma, beta, rho = parameters
+
+    X = state_vector[0::3]
+    Y = state_vector[1::3]
+    Z = state_vector[2::3]
+
+    dx = jnp.stack([sigma * (Y - X), X * (rho - Z) - Y, X * Y - beta * Z], axis=-1).ravel()
+
+    return dx - coupling_matrix @ state_vector
+
+
+def oscillator_jax(state_vector, coupling_matrix, parameters, dynamics_code_value):
+    if dynamics_code_value == DYNAMICS_CODES["rossler"]:
+        return rossler_jax(state_vector, coupling_matrix, parameters)
+
+    if dynamics_code_value == DYNAMICS_CODES["lorenz"]:
+        return lorenz_jax(state_vector, coupling_matrix, parameters)
+
+    raise ValueError(f"Unsupported dynamics code: {dynamics_code_value}")
+
+
+def rk4_step_jax(
+    state,
+    dt,
+    coupling_matrix,
+    parameters,
+    dynamics_code_value=DYNAMICS_CODES["rossler"],
+):
     """
     One RK4 step using JAX.
     """
 
-    k1 = rossler_jax(
+    k1 = oscillator_jax(
         state,
         coupling_matrix,
         parameters,
+        dynamics_code_value,
     )
 
-    k2 = rossler_jax(
+    k2 = oscillator_jax(
         state + 0.5 * dt * k1,
         coupling_matrix,
         parameters,
+        dynamics_code_value,
     )
 
-    k3 = rossler_jax(
+    k3 = oscillator_jax(
         state + 0.5 * dt * k2,
         coupling_matrix,
         parameters,
+        dynamics_code_value,
     )
 
-    k4 = rossler_jax(
+    k4 = oscillator_jax(
         state + dt * k3,
         coupling_matrix,
         parameters,
+        dynamics_code_value,
     )
 
     next_state = state + (dt / 6.0) * (k1 + 2.0 * k2 + 2.0 * k3 + k4)
@@ -70,13 +102,14 @@ def rk4_step_jax(state, dt, coupling_matrix, parameters):
     return next_state
 
 
-@partial(jax.jit, static_argnames=("n_steps",))
+@partial(jax.jit, static_argnames=("n_steps", "dynamics_code_value"))
 def integrate_rk4_scan_jax(
     initial_state,
     coupling_matrix,
     parameters,
     dt,
     n_steps,
+    dynamics_code_value,
 ):
     """
     JIT-compiled RK4 trajectory integrator.
@@ -90,6 +123,7 @@ def integrate_rk4_scan_jax(
             dt=dt,
             coupling_matrix=coupling_matrix,
             parameters=parameters,
+            dynamics_code_value=dynamics_code_value,
         )
 
         return next_state, next_state
@@ -121,6 +155,7 @@ def integrate_rk4_jax(
     tmax,
     dt,
     dimension=3,
+    dynamics="rossler",
     return_numpy=True,
 ):
     """
@@ -135,9 +170,8 @@ def integrate_rk4_jax(
         t has shape (n_time_points,)
     """
 
-    # Match CPU time convention exactly.
-    t = np.arange(0.0, tmax, dt)
-    n_steps = len(t)
+    n_steps = int(round(tmax / dt))
+    t = np.arange(n_steps, dtype=np.float64) * dt
 
     L = graph_laplacian(G)
 
@@ -145,26 +179,27 @@ def integrate_rk4_jax(
         L=L,
         H=H,
         strength=coupling_strength,
+        dimension=dimension,
     )
 
     initial_state = jnp.asarray(
         initial_conditions,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     coupling_matrix = jnp.asarray(
         coupling_matrix_np,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     parameters = jnp.asarray(
         parameters,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     dt_jax = jnp.asarray(
         dt,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     sol = integrate_rk4_scan_jax(
@@ -173,6 +208,7 @@ def integrate_rk4_jax(
         parameters=parameters,
         dt=dt_jax,
         n_steps=n_steps,
+        dynamics_code_value=dynamics_code(dynamics),
     )
 
     if return_numpy:
@@ -181,13 +217,14 @@ def integrate_rk4_jax(
     return sol, jnp.asarray(t)
 
 
-@partial(jax.jit, static_argnames=("n_steps",))
+@partial(jax.jit, static_argnames=("n_steps", "dynamics_code_value"))
 def integrate_rk4_batch_scan_jax(
     initial_states,
     coupling_matrix,
     parameters,
     dt,
     n_steps,
+    dynamics_code_value,
 ):
     """
     JIT-compiled batched RK4 trajectory integrator
@@ -216,6 +253,7 @@ def integrate_rk4_batch_scan_jax(
             dt=dt,
             coupling_matrix=coupling_matrix,
             parameters=parameters,
+            dynamics_code_value=dynamics_code_value,
         )
         return next_state_batch, next_state_batch
 
@@ -254,6 +292,7 @@ def integrate_rk4_batch_jax(
     tmax,
     dt,
     dimension=3,
+    dynamics="rossler",
     return_numpy=True,
 ):
     """
@@ -277,7 +316,7 @@ def integrate_rk4_batch_jax(
 
     initial_conditions_batch = np.asarray(
         initial_conditions_batch,
-        dtype=np.float32,
+        dtype=np.float64,
     )
 
     if initial_conditions_batch.ndim != 2:
@@ -285,8 +324,8 @@ def integrate_rk4_batch_jax(
             "initial_conditions_batch must have shape " "(n_trials, state_dimension)."
         )
 
-    t = np.arange(0.0, tmax, dt)
-    n_steps = len(t)
+    n_steps = int(round(tmax / dt))
+    t = np.arange(n_steps, dtype=np.float64) * dt
 
     L = graph_laplacian(G)
 
@@ -294,26 +333,27 @@ def integrate_rk4_batch_jax(
         L=L,
         H=H,
         strength=coupling_strength,
+        dimension=dimension,
     )
 
     initial_states = jnp.asarray(
         initial_conditions_batch,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     coupling_matrix = jnp.asarray(
         coupling_matrix_np,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     parameters = jnp.asarray(
         parameters,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     dt_jax = jnp.asarray(
         dt,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
     sol_batch = integrate_rk4_batch_scan_jax(
@@ -322,6 +362,7 @@ def integrate_rk4_batch_jax(
         parameters=parameters,
         dt=dt_jax,
         n_steps=n_steps,
+        dynamics_code_value=dynamics_code(dynamics),
     )
 
     if return_numpy:
@@ -348,5 +389,6 @@ def integrate_rk4_batch_from_config(
         tmax=config.tmax,
         dt=config.dt,
         dimension=config.dimension,
+        dynamics=config.dynamics,
         return_numpy=return_numpy,
     )

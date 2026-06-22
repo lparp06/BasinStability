@@ -14,143 +14,22 @@ For now:
 
 import numpy as np
 
-from network_dynamics.core.results import TrialResult, BasinSummary
-from network_dynamics.core.sampling import sample_uniform_initial_condition, trial_seeds
-from network_dynamics.core.diagnostics import (
-    solution_health,
-    is_solution_valid,
-    format_health_message,
+from network_dynamics.core.jax_config import enable_x64
+
+enable_x64()
+
+import jax.numpy as jnp
+
+from network_dynamics.core.basin_common import (
+    classify_solution,
+    sample_initial_conditions_batch,
 )
-from network_dynamics.core.sync import analyze_synchronization
-from network_dynamics.gpu.integration import integrate_rk4_batch_jax
-
-
-def sample_initial_conditions_batch(config, seeds):
-    """
-    Generate a batch of initial conditions.
-
-    Parameters
-    ----------
-    config : BasinConfig
-        Experiment settings.
-
-    seeds : sequence of int
-        Trial seeds for this batch.
-
-    Returns
-    -------
-    initial_conditions_batch : np.ndarray
-        Shape: (batch_size, state_dimension)
-    """
-
-    if config.sampler != "uniform":
-        raise ValueError(f"Unknown sampler: {config.sampler}")
-
-    low, high = config.sampling_bounds
-
-    initial_conditions = []
-
-    for seed in seeds:
-        rng = np.random.default_rng(seed)
-
-        initial_condition = sample_uniform_initial_condition(
-            rng=rng,
-            n_nodes=config.n_nodes,
-            dimension=config.dimension,
-            low=low,
-            high=high,
-        )
-
-        initial_conditions.append(initial_condition)
-
-    initial_conditions_batch = np.asarray(
-        initial_conditions,
-        dtype=np.float32,
-    )
-
-    return initial_conditions_batch
-
-
-def choose_success(sync_metrics, success_definition):
-    """
-    Choose which synchronization condition counts as basin success.
-
-    Options:
-    - "final_success"
-    - "window_success"
-    - "first_crossing"
-    """
-
-    if success_definition == "final_success":
-        return sync_metrics["final_success"]
-
-    if success_definition == "window_success":
-        return sync_metrics["window_success"]
-
-    if success_definition == "first_crossing":
-        return sync_metrics["first_crossing_success"]
-
-    raise ValueError(
-        "success_definition must be one of: "
-        "'final_success', 'window_success', or 'first_crossing'."
-    )
-
-
-def classify_single_trajectory(config, trial_seed, sol, t):
-    """
-    Classify one already-integrated trajectory.
-
-    This does the same post-integration work as CPU basin.py:
-    - check numerical health
-    - compute synchronization metrics
-    - return a TrialResult
-    """
-
-    health = solution_health(
-        sol,
-        max_abs_threshold=config.max_abs_threshold,
-    )
-
-    if not is_solution_valid(health):
-        return TrialResult(
-            trial_seed=trial_seed,
-            success=False,
-            final_success=False,
-            window_success=False,
-            integration_failed=True,
-            final_distance=None,
-            window_max_distance=None,
-            min_distance=None,
-            sync_time=None,
-            error=format_health_message(health),
-        )
-
-    sync_metrics = analyze_synchronization(
-        sol=sol,
-        t=t,
-        dimension=config.dimension,
-        tol=config.sync_tol,
-        tol_max=config.tol_max,
-        win_frac=config.window_fraction,
-    )
-
-    success = choose_success(
-        sync_metrics=sync_metrics,
-        success_definition=config.success_definition,
-    )
-
-    return TrialResult(
-        trial_seed=trial_seed,
-        success=bool(success),
-        final_success=bool(sync_metrics["final_success"]),
-        window_success=bool(sync_metrics["window_success"]),
-        integration_failed=False,
-        final_distance=sync_metrics["final_distance"],
-        window_max_distance=sync_metrics["window_max_distance"],
-        min_distance=sync_metrics["min_distance"],
-        sync_time=sync_metrics["sync_time"],
-        error=None,
-    )
+from network_dynamics.core.coupling import build_coupling_matrix
+from network_dynamics.core.graphs import graph_laplacian
+from network_dynamics.core.results import BasinSummary
+from network_dynamics.core.sampling import trial_seeds
+from network_dynamics.gpu.dynamics import dynamics_code, rk4_step_batch_jax
+from network_dynamics.gpu.integration import integrate_rk4_batch_scan_jax
 
 
 def basin_stability_gpu(config, batch_size=25, verbose=True):
@@ -187,6 +66,18 @@ def basin_stability_gpu(config, batch_size=25, verbose=True):
     if batch_size <= 0:
         raise ValueError("batch_size must be positive.")
 
+    # Build coupling matrix once and keep it on device for all chunks.
+    L = graph_laplacian(config.G)
+    coupling_matrix = jnp.asarray(
+        build_coupling_matrix(L=L, H=config.H, strength=config.coupling_strength, dimension=config.dimension),
+        dtype=jnp.float64,
+    )
+    parameters = jnp.asarray(config.parameters, dtype=jnp.float64)
+    dt_jax = jnp.asarray(config.dt, dtype=jnp.float64)
+    n_steps = int(round(config.tmax / config.dt))
+    t = np.arange(n_steps, dtype=np.float64) * config.dt
+    dyn_code = dynamics_code(config.dynamics)
+
     seeds = trial_seeds(
         base_seed=config.base_seed,
         n_trials=config.n_trials,
@@ -204,24 +95,26 @@ def basin_stability_gpu(config, batch_size=25, verbose=True):
         initial_conditions_batch = sample_initial_conditions_batch(
             config=config,
             seeds=seed_chunk,
+            dtype=np.float64,
         )
 
-        sol_batch, t = integrate_rk4_batch_jax(
-            G=config.G,
-            initial_conditions_batch=initial_conditions_batch,
-            parameters=config.parameters,
-            coupling_strength=config.coupling_strength,
-            H=config.H,
-            tmax=config.tmax,
-            dt=config.dt,
-            dimension=config.dimension,
-            return_numpy=True,
+        initial_states = jnp.asarray(initial_conditions_batch, dtype=jnp.float64)
+
+        sol_batch_jax = integrate_rk4_batch_scan_jax(
+            initial_states=initial_states,
+            coupling_matrix=coupling_matrix,
+            parameters=parameters,
+            dt=dt_jax,
+            n_steps=n_steps,
+            dynamics_code_value=dyn_code,
         )
+        sol_batch = np.asarray(sol_batch_jax)
+        del sol_batch_jax
 
         for trial_index, seed in enumerate(seed_chunk):
             sol = sol_batch[trial_index]
 
-            result = classify_single_trajectory(
+            result = classify_solution(
                 config=config,
                 trial_seed=seed,
                 sol=sol,
@@ -230,9 +123,7 @@ def basin_stability_gpu(config, batch_size=25, verbose=True):
 
             results.append(result)
 
-        # Drop references to big arrays before the next chunk.
-        del initial_conditions_batch
-        del sol_batch
+        del initial_conditions_batch, sol_batch
 
     summary = BasinSummary.from_results(
         config=config,

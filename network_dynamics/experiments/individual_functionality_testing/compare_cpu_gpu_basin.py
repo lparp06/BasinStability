@@ -8,8 +8,8 @@ This is a full basin-level comparison, not a tiny trajectory correctness test.
 For this laptop/MPS setup:
 - use dt=0.05 for the full basin comparison
 - use smaller dt only in small correctness scripts
-- accept small CPU/GPU basin-stability differences because CPU uses float64
-  and GPU/MPS usually uses float32
+- accept small CPU/GPU basin-stability differences because different numerical
+  libraries can still diverge slightly even when both request float64
 
 Run from project root:
 
@@ -99,7 +99,7 @@ def compare_summaries(cpu_summary, gpu_summary):
     Compare CPU and GPU basin summaries.
 
     With RK4, CPU and GPU should be close, but not necessarily identical.
-    CPU NumPy usually uses float64. JAX on MPS usually uses float32.
+    This project requests float64 for both NumPy and JAX.
     Tiny trajectory differences can flip strict window-success classification.
 
     Therefore, for this full run, we check:

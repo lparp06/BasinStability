@@ -1,9 +1,9 @@
 """
-Run an MSF-only scan for the Rössler oscillator.
+Run an MSF-only scan for one oscillator.
 
 Example
 -------
-python3 -m network_dynamics.experiments.rossler_msf_scan \
+python3 -m network_dynamics.experiments.msf_scan \
     --measurement-time 5000 \
     --transient-time 1000 \
     --K-min 0 \
@@ -19,15 +19,19 @@ import multiprocessing
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+from network_dynamics.core.jax_config import enable_x64
+
+enable_x64()
+
 import jax
 import jax.numpy as jnp
 import numpy as np
 
 from network_dynamics.core.msf import (
-    RosslerMSFConfig,
+    MSFConfig,
     config_to_jax_arrays,
     find_zero_brackets,
-    refine_brackets_jax,
+    normalize_msf_dynamics,
     scan_msf_jax,
     stable_intervals_from_brackets,
 )
@@ -36,15 +40,42 @@ from network_dynamics.core.msf_cache import (
     find_cached_msf_result,
     make_msf_cache_key,
 )
+from network_dynamics.core.dynamics_parameters import (
+    format_parameter_defaults,
+    resolve_dynamics_parameters,
+)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Run a Rössler master-stability-function scan only."
+        description="Run a master-stability-function scan only."
     )
-    parser.add_argument("--a", type=float, default=0.2)
-    parser.add_argument("--b", type=float, default=0.2)
-    parser.add_argument("--c", type=float, default=9.0)
+    parser.add_argument(
+        "--a",
+        type=float,
+        default=None,
+        help="First dynamics parameter. Omit to use the selected dynamics default.",
+    )
+    parser.add_argument(
+        "--b",
+        type=float,
+        default=None,
+        help="Second dynamics parameter. Omit to use the selected dynamics default.",
+    )
+    parser.add_argument(
+        "--c",
+        type=float,
+        default=None,
+        help="Third dynamics parameter. Omit to use the selected dynamics default.",
+    )
+    parser.add_argument(
+        "--dynamics",
+        default="rossler",
+        help=(
+            "Oscillator dynamics for the synchronized trajectory and "
+            "variational equation."
+        ),
+    )
     parser.add_argument("--target", type=int, default=0)
     parser.add_argument("--source", type=int, default=0)
     parser.add_argument("--dt", type=float, default=0.05)
@@ -61,8 +92,6 @@ def parse_args():
         default=1,
         help="Number of CPU worker processes for parallel K chunks.",
     )
-    parser.add_argument("--refine", action="store_true")
-    parser.add_argument("--tolerance", type=float, default=1e-3)
     parser.add_argument(
         "--csv",
         default=None,
@@ -77,10 +106,18 @@ def parse_args():
 
 
 def make_config(args):
-    return RosslerMSFConfig(
+    dynamics = normalize_msf_dynamics(args.dynamics)
+    a, b, c = resolve_dynamics_parameters(
+        dynamics=dynamics,
         a=args.a,
         b=args.b,
         c=args.c,
+    )
+    return MSFConfig(
+        a=a,
+        b=b,
+        c=c,
+        dynamics=dynamics,
         target=args.target,
         source=args.source,
         dt=args.dt,
@@ -93,7 +130,7 @@ def make_config(args):
 def scan_msf_batch(config, K_values_np):
     params, initial_state, H = config_to_jax_arrays(config)
 
-    K_values = jnp.asarray(K_values_np, dtype=jnp.float32)
+    K_values = jnp.asarray(K_values_np, dtype=jnp.float64)
     psi_values, exponent_values = scan_msf_jax(
         K_values,
         initial_state,
@@ -103,6 +140,7 @@ def scan_msf_batch(config, K_values_np):
         config.measurement_steps,
         config.dt,
         config.qr_interval_steps,
+        config.dynamics,
     )
     psi_values.block_until_ready()
     return (
@@ -215,15 +253,16 @@ def write_csv(path, K_values, psi_values, exponent_values):
 
 
 def print_summary(args, config):
-    print("Rössler MSF scan")
+    print("MSF scan")
     print("=" * 40)
     print("JAX backend:", jax.default_backend())
     print("JAX devices:", jax.devices())
     print(
         "Parameters:",
-        f"a={config.a}, b={config.b}, c={config.c}, "
+        f"dynamics={config.dynamics}, a={config.a}, b={config.b}, c={config.c}, "
         f"coupling={config.source + 1}->{config.target + 1}",
     )
+    print("Registered defaults:", format_parameter_defaults())
     print(
         "Time:",
         f"dt={config.dt}, transient_time={config.transient_time}, "
@@ -234,8 +273,22 @@ def print_summary(args, config):
     print(
         "K scan:",
         f"K_min={args.K_min}, K_max={args.K_max}, n_K={args.n_K}, "
-        f"chunk_size={args.chunk_size}, workers={args.n_workers}, "
-        f"refine={args.refine}",
+        f"chunk_size={args.chunk_size}, workers={args.n_workers}",
+    )
+    print()
+
+
+def warn_if_msf_step_is_large(dt, K_max):
+    stiffness_scale = dt * K_max
+    if stiffness_scale <= 2.5:
+        return
+
+    print(
+        "WARNING: dt*K_max is large for explicit RK4 "
+        f"({dt}*{K_max}={stiffness_scale:.3g}). "
+        "High-K MSF values may show artificial positive growth; "
+        "try a smaller --dt such as 0.01 or 0.005.",
+        flush=True,
     )
     print()
 
@@ -253,6 +306,7 @@ def main():
         raise ValueError("n_workers must be positive.")
 
     print_summary(args, config)
+    warn_if_msf_step_is_large(config.dt, args.K_max)
     K_values = np.linspace(args.K_min, args.K_max, args.n_K)
 
     start = time.perf_counter()
@@ -271,8 +325,6 @@ def main():
         K_min=args.K_min,
         K_max=args.K_max,
         n_K=args.n_K,
-        refine=args.refine,
-        tolerance=args.tolerance,
     )
 
     print()
@@ -284,20 +336,8 @@ def main():
     print("Zero brackets:", brackets)
     print("Stable K intervals from brackets:", stable_intervals)
 
-    if args.refine and brackets:
-        print()
-        print("Refining brackets...")
-        refined = refine_brackets_jax(
-            brackets=brackets,
-            config=config,
-            tolerance=args.tolerance,
-        )
-        zeros = [zero for zero, _psi in refined]
-        print("Refined zeros:", zeros)
-        print("Psi at refined zeros:", [psi for _zero, psi in refined])
-    else:
-        zeros = [0.5 * (left + right) for left, right in brackets]
-        print("Midpoint zeros:", zeros)
+    zeros = [0.5 * (left + right) for left, right in brackets]
+    print("Midpoint zeros:", zeros)
 
     cached = find_cached_msf_result(
         cache_path=args.msf_cache,

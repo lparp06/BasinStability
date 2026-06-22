@@ -9,6 +9,9 @@ implementations for comparing serial, parallel, and accelerator performance.
 The older top-level files `GenerateDynamics.py` and `GenerateDynamicsTest.py` are legacy code and
 are not the main interface for the current basin-stability workflow.
 
+For a full map of the package, backend responsibilities, experiment scripts, and cleanup notes, see
+[`docs/CODEBASE_GUIDE.md`](docs/CODEBASE_GUIDE.md).
+
 ## What This Code Does
 
 The main model is a network of identical Roessler oscillators. Each node has state

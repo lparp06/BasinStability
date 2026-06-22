@@ -193,11 +193,17 @@ def analyze_synchronization(sol, t, dimension=3, tol=1e-3, tol_max=1e6, win_frac
     )
 
     final_distance = float(distances[-1])
-    min_distance = float(np.min(distances))
+    finite_distances = distances[np.isfinite(distances)]
+    min_distance = float(np.min(finite_distances)) if finite_distances.size else np.inf
 
     window_start = int((1.0 - win_frac) * len(distances))
     window_distances = distances[window_start:]
-    window_max_distance = float(np.max(window_distances))
+    finite_window_distances = window_distances[np.isfinite(window_distances)]
+    window_max_distance = (
+        float(np.max(finite_window_distances))
+        if finite_window_distances.size
+        else np.inf
+    )
 
     final_success = final_distance < tol
     window_success = window_max_distance < tol

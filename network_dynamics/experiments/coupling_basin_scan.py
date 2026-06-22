@@ -1,9 +1,9 @@
 """
-Scan Rössler 1->1 coupling strengths from MSF intervals and basin stability.
+Scan coupling strengths from MSF intervals and basin stability.
 
 Example
 -------
-python3 -m network_dynamics.experiments.rossler_coupling_basin_scan \
+python3 -m network_dynamics.experiments.coupling_basin_scan \
     --n-trials 25 \
     --tmax 150 \
     --n-strengths 5
@@ -28,12 +28,17 @@ from network_dynamics.core.coupling_strengths import (
     interval_coupling_strengths,
 )
 from network_dynamics.core.graphs import make_graph
-from network_dynamics.core.msf import RosslerMSFConfig, find_msf_zeros_jax
+from network_dynamics.core.msf import MSFConfig, find_msf_zeros_jax
 from network_dynamics.core.msf_cache import (
     append_msf_cache_result,
     find_cached_msf_result,
     make_msf_cache_key,
 )
+from network_dynamics.core.dynamics_parameters import (
+    format_parameter_defaults,
+    resolve_dynamics_parameters,
+)
+from network_dynamics.core.oscillators import normalize_dynamics_type
 from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.cpu.basin import basin_stability_cpu_from_initial_conditions
 from network_dynamics.gpu.basin_fast import basin_stability_gpu_fast_from_initial_conditions
@@ -47,6 +52,7 @@ class ScanRequest:
     graph_seed: int
     base_seed: int
     n_trials: int
+    dynamics: str
     tmax: float
     dt: float
     n_strengths: int
@@ -70,8 +76,6 @@ class ScanRequest:
     K_min: float
     K_max: float
     n_K: int
-    refine_zeros: bool
-    zero_tolerance: float
     msf_cache: str
     msf_transient_time: float
     msf_measurement_time: float
@@ -82,8 +86,8 @@ class ScanRequest:
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
-            "Compute Rössler 1->1 MSF zeros, convert them to coupling-strength "
-            "intervals, and run basin stability across one interval."
+            "Compute MSF zeros, convert them to graph-valid coupling-strength "
+            "intervals, and run basin stability across one selected interval."
         )
     )
     parser.add_argument("--graph", "--graph-type", dest="graph_type", default="erdos-renyi")
@@ -91,7 +95,12 @@ def parse_args():
     parser.add_argument("--edge-probability", type=float, default=0.15)
     parser.add_argument("--graph-seed", type=int, default=42)
     parser.add_argument("--base-seed", type=int, default=42)
-    parser.add_argument("--n-trials", type=int, default=1000.0)
+    parser.add_argument("--n-trials", type=int, default=1000)
+    parser.add_argument(
+        "--dynamics",
+        default="rossler",
+        help="Oscillator dynamics used for basin integration.",
+    )
     parser.add_argument("--tmax", type=float, default=5000.0)
     parser.add_argument("--dt", type=float, default=0.05)
     parser.add_argument("--n-strengths", type=int, default=10)
@@ -137,18 +146,27 @@ def parse_args():
     parser.add_argument("--sampling-low", type=float, default=-5.0)
     parser.add_argument("--sampling-high", type=float, default=5.0)
     parser.add_argument("--max-abs-threshold", type=float, default=1e9)
-    parser.add_argument("--a", type=float, default=0.2)
-    parser.add_argument("--b", type=float, default=0.2)
-    parser.add_argument("--c", type=float, default=9.0)
+    parser.add_argument(
+        "--a",
+        type=float,
+        default=None,
+        help="First dynamics parameter. Omit to use the selected dynamics default.",
+    )
+    parser.add_argument(
+        "--b",
+        type=float,
+        default=None,
+        help="Second dynamics parameter. Omit to use the selected dynamics default.",
+    )
+    parser.add_argument(
+        "--c",
+        type=float,
+        default=None,
+        help="Third dynamics parameter. Omit to use the selected dynamics default.",
+    )
     parser.add_argument("--K-min", type=float, default=0.0)
     parser.add_argument("--K-max", type=float, default=10.0)
     parser.add_argument("--n-K", type=int, default=101)
-    parser.add_argument(
-        "--no-refine-zeros",
-        action="store_true",
-        help="Use midpoint estimates from the K scan instead of bisection.",
-    )
-    parser.add_argument("--zero-tolerance", type=float, default=1e-3)
     parser.add_argument(
         "--msf-cache",
         default="outputs/msf_zero_cache.csv",
@@ -195,6 +213,13 @@ def resolve_n_workers(args):
 
 def request_from_args(args):
     n_workers = resolve_n_workers(args)
+    dynamics = normalize_dynamics_type(args.dynamics)
+    a, b, c = resolve_dynamics_parameters(
+        dynamics=dynamics,
+        a=args.a,
+        b=args.b,
+        c=args.c,
+    )
 
     return ScanRequest(
         graph_type=args.graph_type,
@@ -203,6 +228,7 @@ def request_from_args(args):
         graph_seed=args.graph_seed,
         base_seed=args.base_seed,
         n_trials=args.n_trials,
+        dynamics=dynamics,
         tmax=args.tmax,
         dt=args.dt,
         n_strengths=args.n_strengths,
@@ -220,14 +246,12 @@ def request_from_args(args):
         sampling_low=args.sampling_low,
         sampling_high=args.sampling_high,
         max_abs_threshold=args.max_abs_threshold,
-        a=args.a,
-        b=args.b,
-        c=args.c,
+        a=a,
+        b=b,
+        c=c,
         K_min=args.K_min,
         K_max=args.K_max,
         n_K=args.n_K,
-        refine_zeros=not args.no_refine_zeros,
-        zero_tolerance=args.zero_tolerance,
         msf_cache=args.msf_cache,
         msf_transient_time=args.msf_transient_time,
         msf_measurement_time=args.msf_measurement_time,
@@ -237,7 +261,8 @@ def request_from_args(args):
 
 
 def make_msf_config(request):
-    return RosslerMSFConfig(
+    return MSFConfig(
+        dynamics=request.dynamics,
         a=request.a,
         b=request.b,
         c=request.c,
@@ -277,6 +302,7 @@ def make_basin_config(request, graph, coupling_strength):
 
     return BasinConfig(
         G=graph,
+        dynamics=request.dynamics,
         dimension=3,
         parameters=(request.a, request.b, request.c),
         coupling_strength=float(coupling_strength),
@@ -306,7 +332,7 @@ def format_float(value):
 
 
 def print_run_header(request, graph):
-    print("Rössler 1->1 coupling basin scan")
+    print("Coupling basin scan")
     print("=" * 44)
     if request.backend == "gpu":
         import jax
@@ -328,9 +354,10 @@ def print_run_header(request, graph):
         f"backend={request.backend}, workers={request.n_workers}",
     )
     print(
-        "Rössler parameters:",
-        f"a={request.a}, b={request.b}, c={request.c}, coupling=1->1",
+        "Dynamics:",
+        f"type={request.dynamics}, parameters=({request.a}, {request.b}, {request.c})",
     )
+    print("Registered defaults:", format_parameter_defaults())
     print(
         "Coupling interval:",
         (
@@ -338,9 +365,24 @@ def print_run_header(request, graph):
             if request.coupling_low is not None or request.coupling_high is not None
             else (
                 f"from MSF K=[{request.K_min}, {request.K_max}], "
-                f"n_K={request.n_K}, refine={request.refine_zeros}"
+                f"n_K={request.n_K}"
             )
         ),
+    )
+    print()
+
+
+def warn_if_msf_step_is_large(dt, K_max):
+    stiffness_scale = dt * K_max
+    if stiffness_scale <= 2.5:
+        return
+
+    print(
+        "WARNING: msf_dt*K_max is large for explicit RK4 "
+        f"({dt}*{K_max}={stiffness_scale:.3g}). "
+        "High-K MSF values may show artificial positive growth; "
+        "try a smaller --msf-dt such as 0.01 or 0.005.",
+        flush=True,
     )
     print()
 
@@ -507,13 +549,12 @@ def main():
 
     if manual_interval is None:
         msf_config = make_msf_config(request)
+        warn_if_msf_step_is_large(msf_config.dt, request.K_max)
         cache_key = make_msf_cache_key(
             config=msf_config,
             K_min=request.K_min,
             K_max=request.K_max,
             n_K=request.n_K,
-            refine=request.refine_zeros,
-            tolerance=request.zero_tolerance,
         )
         cached = find_cached_msf_result(
             cache_path=request.msf_cache,
@@ -527,8 +568,6 @@ def main():
                 K_min=request.K_min,
                 K_max=request.K_max,
                 n_K=request.n_K,
-                refine=request.refine_zeros,
-                tolerance=request.zero_tolerance,
                 chunk_size=request.msf_chunk_size,
                 verbose=True,
             )

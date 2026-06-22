@@ -65,7 +65,7 @@ def sample_initial_condition(config, trial_seed):
     )
 
 
-def sample_initial_conditions_batch(config, seeds, dtype=np.float32):
+def sample_initial_conditions_batch(config, seeds, dtype=np.float64):
     """
     Generate a batch of reproducible initial conditions from trial seeds.
     """

@@ -1,4 +1,4 @@
-"""CSV cache helpers for Rössler MSF zero calculations."""
+"""CSV cache helpers for MSF zero calculations."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from pathlib import Path
 
 MSF_CACHE_FIELDS = (
     "created_at",
+    "dynamics",
     "a",
     "b",
     "c",
@@ -22,8 +23,6 @@ MSF_CACHE_FIELDS = (
     "K_min",
     "K_max",
     "n_K",
-    "refine",
-    "tolerance",
     "zeros_json",
     "zero_brackets_json",
     "stable_intervals_json",
@@ -34,19 +33,14 @@ def _float_key(value):
     return f"{float(value):.17g}"
 
 
-def _bool_key(value):
-    return "1" if bool(value) else "0"
-
-
 def make_msf_cache_key(
     config,
     K_min,
     K_max,
     n_K,
-    refine,
-    tolerance,
 ):
     return {
+        "dynamics": getattr(config, "dynamics", "rossler"),
         "a": _float_key(config.a),
         "b": _float_key(config.b),
         "c": _float_key(config.c),
@@ -59,13 +53,15 @@ def make_msf_cache_key(
         "K_min": _float_key(K_min),
         "K_max": _float_key(K_max),
         "n_K": str(int(n_K)),
-        "refine": _bool_key(refine),
-        "tolerance": _float_key(tolerance),
     }
 
 
 def row_matches_key(row, key):
-    return all(row.get(field) == value for field, value in key.items())
+    normalized_row = dict(row)
+    if "dynamics" in key and not normalized_row.get("dynamics"):
+        normalized_row["dynamics"] = "rossler"
+
+    return all(normalized_row.get(field) == value for field, value in key.items())
 
 
 def read_msf_cache(cache_path):
@@ -76,6 +72,32 @@ def read_msf_cache(cache_path):
 
     with path.open("r", newline="", encoding="utf-8") as csv_file:
         return list(csv.DictReader(csv_file))
+
+
+def _ensure_cache_schema(path: Path):
+    if not path.exists() or path.stat().st_size == 0:
+        return False
+
+    with path.open("r", newline="", encoding="utf-8") as csv_file:
+        reader = csv.DictReader(csv_file)
+        fieldnames = reader.fieldnames or []
+        if tuple(fieldnames) == MSF_CACHE_FIELDS:
+            return True
+        rows = list(reader)
+
+    migrated_rows = []
+    for row in rows:
+        migrated = {field: row.get(field, "") for field in MSF_CACHE_FIELDS}
+        if not migrated["dynamics"]:
+            migrated["dynamics"] = "rossler"
+        migrated_rows.append(migrated)
+
+    with path.open("w", newline="", encoding="utf-8") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=MSF_CACHE_FIELDS)
+        writer.writeheader()
+        writer.writerows(migrated_rows)
+
+    return True
 
 
 def find_cached_msf_result(cache_path, key):
@@ -102,7 +124,7 @@ def append_msf_cache_result(
 ):
     path = Path(cache_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    file_exists = path.exists() and path.stat().st_size > 0
+    file_exists = _ensure_cache_schema(path)
 
     row = {
         "created_at": datetime.now(timezone.utc).isoformat(),

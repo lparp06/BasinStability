@@ -11,7 +11,7 @@ import numpy as np
 import networkx as nx
 
 from network_dynamics.core.graphs import graph_laplacian
-from network_dynamics.core.msf import RosslerMSFConfig, find_msf_zeros_jax
+from network_dynamics.core.msf import MSFConfig, find_msf_zeros_jax
 
 
 @dataclass(frozen=True)
@@ -117,12 +117,10 @@ def coupling_strength_intervals_from_zeros(
 
 def find_coupling_strength_intervals_jax(
     G,
-    config: RosslerMSFConfig,
+    config: MSFConfig,
     K_min: float = 0.0,
     K_max: float = 10.0,
     n_K: int = 101,
-    refine: bool = True,
-    tolerance: float = 1e-3,
     eigenvalue_tolerance: float = 1e-10,
     chunk_size: int | None = None,
     verbose: bool = False,
@@ -136,8 +134,6 @@ def find_coupling_strength_intervals_jax(
         K_min=K_min,
         K_max=K_max,
         n_K=n_K,
-        refine=refine,
-        tolerance=tolerance,
         chunk_size=chunk_size,
         verbose=verbose,
     )
@@ -187,5 +183,3 @@ def coupling_strengths_from_intervals(
         )
         for interval in intervals
     ]
-
-

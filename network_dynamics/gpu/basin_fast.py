@@ -7,6 +7,11 @@ and copies back only compact per-trial metrics.
 """
 
 import numpy as np
+
+from network_dynamics.core.jax_config import enable_x64
+
+enable_x64()
+
 import jax
 import jax.numpy as jnp
 
@@ -15,6 +20,7 @@ from network_dynamics.core.graphs import graph_laplacian
 from network_dynamics.core.results import BasinSummary, TrialResult
 from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.core.coupling import build_coupling_matrix
+from network_dynamics.gpu.dynamics import dynamics_code
 from network_dynamics.gpu.metrics import (
     BasinMetricInputs,
     choose_success_code,
@@ -38,7 +44,7 @@ def sample_initial_conditions_jax(config):
         shape=(config.n_trials, config.state_dimension),
         minval=low,
         maxval=high,
-        dtype=jnp.float32,
+        dtype=jnp.float64,
     )
 
 
@@ -52,9 +58,10 @@ def make_coupling_matrix_jax(config):
         L=laplacian,
         H=config.H,
         strength=config.coupling_strength,
+        dimension=config.dimension,
     )
 
-    return jnp.asarray(coupling_matrix, dtype=jnp.float32)
+    return jnp.asarray(coupling_matrix, dtype=jnp.float64)
 
 
 def validate_fast_gpu_config(config):
@@ -71,18 +78,18 @@ def validate_fast_gpu_config(config):
         )
 
     if config.dimension != 3:
-        raise ValueError("GPU fast basin currently assumes Rössler dimension=3.")
+        raise ValueError("GPU fast basin currently assumes 3D oscillator states.")
 
 
 def _make_metric_inputs(config):
     return BasinMetricInputs(
         coupling_matrix=make_coupling_matrix_jax(config),
-        parameters=jnp.asarray(config.parameters, dtype=jnp.float32),
-        dt=jnp.asarray(config.dt, dtype=jnp.float32),
-        sync_tol=jnp.asarray(config.sync_tol, dtype=jnp.float32),
+        parameters=jnp.asarray(config.parameters, dtype=jnp.float64),
+        dt=jnp.asarray(config.dt, dtype=jnp.float64),
+        sync_tol=jnp.asarray(config.sync_tol, dtype=jnp.float64),
         max_abs_threshold=jnp.asarray(
             config.max_abs_threshold,
-            dtype=jnp.float32,
+            dtype=jnp.float64,
         ),
     )
 
@@ -98,6 +105,7 @@ def _run_fast_metrics(config, initial_states):
         window_start=window_start,
         success_code=choose_success_code(config.success_definition),
         dimension=config.dimension,
+        dynamics_code_value=dynamics_code(config.dynamics),
     )
 
 
@@ -186,7 +194,7 @@ def basin_stability_gpu_fast_from_initial_conditions(
     initial_conditions_batch = validate_initial_conditions_batch(
         config=config,
         initial_conditions_batch=initial_conditions_batch,
-        dtype=np.float32,
+        dtype=np.float64,
     )
 
     if seeds is None:
@@ -197,7 +205,7 @@ def basin_stability_gpu_fast_from_initial_conditions(
     else:
         seeds = list(seeds)
 
-    initial_states = jnp.asarray(initial_conditions_batch, dtype=jnp.float32)
+    initial_states = jnp.asarray(initial_conditions_batch, dtype=jnp.float64)
 
     return _summary_from_initial_states(
         config=config,

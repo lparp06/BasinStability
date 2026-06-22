@@ -17,9 +17,9 @@ class BasinClassificationTests(unittest.TestCase):
 
         sol = np.array(
             [
-                [0.0, 0.0, 0.0],
-                [0.0, 0.0, 0.0],
-                [np.nan, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [np.nan, 0.0, 0.0, 0.0, 0.0, 0.0],
             ]
         )
         t = np.array([0.0, 1.0, 2.0])
@@ -45,9 +45,9 @@ class BasinClassificationTests(unittest.TestCase):
 
         sol = np.array(
             [
-                [1.0, 0.0, 0.0],
-                [1.0, 0.0, 0.0],
-                [np.nan, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+                [np.nan, 0.0, 0.0, 0.0, 0.0, 0.0],
             ]
         )
         t = np.array([0.0, 1.0, 2.0])

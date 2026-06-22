@@ -7,6 +7,7 @@ import numpy as np
 import networkx as nx
 
 from network_dynamics.core.basin_common import SUCCESS_DEFINITIONS
+from network_dynamics.core.oscillators import normalize_dynamics_type
 
 
 @dataclass
@@ -15,6 +16,7 @@ class BasinConfig:
 
     # Network and oscillator settings
     G: nx.Graph = field(default_factory=lambda: nx.path_graph(5))
+    dynamics: str = "rossler"
     dimension: int = 3
     parameters: Sequence[float] = (0.2, 0.2, 7.0)
 
@@ -55,8 +57,12 @@ class BasinConfig:
         if self.dimension <= 0:
             raise ValueError("dimension must be positive.")
 
+        self.dynamics = normalize_dynamics_type(self.dynamics)
+
         if len(self.parameters) != 3:
-            raise ValueError("parameters must be (a, b, c).")
+            raise ValueError(
+                "parameters must contain three values for the selected dynamics."
+            )
 
         if self.coupling_strength < 0:
             raise ValueError("coupling_strength must be nonnegative.")
@@ -122,12 +128,13 @@ class BasinConfig:
 
     @property
     def n_time_points(self):
-        return len(np.arange(0.0, self.tmax, self.dt))
+        return int(round(self.tmax / self.dt))
 
     def to_dict(self):
         return {
             "n_nodes": self.n_nodes,
             "n_edges": self.n_edges,
+            "dynamics": self.dynamics,
             "dimension": self.dimension,
             "state_dimension": self.state_dimension,
             "parameters": tuple(self.parameters),

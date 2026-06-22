@@ -8,6 +8,10 @@ the CPU. It scans the RK4 integration and keeps only compact per-trial metrics.
 from functools import partial
 from typing import NamedTuple
 
+from network_dynamics.core.jax_config import enable_x64
+
+enable_x64()
+
 import jax
 import jax.numpy as jnp
 from jax import lax
@@ -69,6 +73,7 @@ def choose_success_code(success_definition):
         "window_start",
         "success_code",
         "dimension",
+        "dynamics_code_value",
     ),
 )
 def run_basin_metrics_jax(
@@ -78,6 +83,7 @@ def run_basin_metrics_jax(
     window_start,
     success_code,
     dimension,
+    dynamics_code_value,
 ):
     """
     Integrate a batch and classify basin trials entirely in JAX.
@@ -124,6 +130,7 @@ def run_basin_metrics_jax(
             dt=inputs.dt,
             coupling_matrix=inputs.coupling_matrix,
             parameters=inputs.parameters,
+            dynamics_code_value=dynamics_code_value,
         )
 
         distance = max_pairwise_distance_batch(
@@ -161,7 +168,7 @@ def run_basin_metrics_jax(
 
         return next_carry, None
 
-    step_indices = jnp.arange(1, n_steps, dtype=jnp.float32)
+    step_indices = jnp.arange(1, n_steps, dtype=jnp.int32)
     final_carry, _ = lax.scan(step_function, initial_carry, step_indices)
 
     (
