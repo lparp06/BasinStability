@@ -41,6 +41,43 @@ def find_zero_brackets(
     )
 
 
+def merge_close_brackets(
+    brackets: list[tuple[float, float]],
+    min_separation: float = 1.0,
+) -> list[tuple[float, float]]:
+    """Collapse clusters of nearby sign-change brackets into single brackets.
+
+    Numerical noise can produce several rapid sign flips where only one true
+    zero crossing exists.  Brackets whose left edge is within *min_separation*
+    of the previous bracket's right edge are grouped into a cluster.  A cluster
+    with an odd count represents a net sign change and is kept as one bracket
+    spanning the full cluster; a cluster with an even count is discarded.
+    """
+    if not brackets:
+        return []
+
+    merged: list[tuple[float, float]] = []
+    cluster_start = brackets[0][0]
+    cluster_end = brackets[0][1]
+    cluster_count = 1
+
+    for left, right in brackets[1:]:
+        if left - cluster_end < min_separation:
+            cluster_end = right
+            cluster_count += 1
+        else:
+            if cluster_count % 2 == 1:
+                merged.append((cluster_start, cluster_end))
+            cluster_start = left
+            cluster_end = right
+            cluster_count = 1
+
+    if cluster_count % 2 == 1:
+        merged.append((cluster_start, cluster_end))
+
+    return merged
+
+
 def stable_intervals_from_brackets(
     brackets: list[tuple[float, float]],
 ) -> list[tuple[float, float]]:

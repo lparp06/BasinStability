@@ -54,9 +54,14 @@ class MSFConfig:
         if self.qr_interval_steps <= 0:
             raise ValueError("qr_interval_steps must be positive.")
         if self.measurement_steps % self.qr_interval_steps != 0:
+            n_qr = self.measurement_steps // self.qr_interval_steps
+            covered = n_qr * self.qr_interval_steps
             raise ValueError(
-                "measurement_steps must be divisible by qr_interval_steps "
-                "so all tangent growth is included in log_stretch."
+                f"measurement_steps={self.measurement_steps} is not divisible by "
+                f"qr_interval_steps={self.qr_interval_steps}. "
+                f"The last {self.measurement_steps - covered} integration steps "
+                "would not be included in log_stretch, biasing the Lyapunov estimate. "
+                f"Use measurement_steps={covered} or {covered + self.qr_interval_steps}."
             )
         if not (0 <= self.target < 3 and 0 <= self.source < 3):
             raise ValueError("target and source must be in {0, 1, 2}.")

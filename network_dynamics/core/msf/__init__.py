@@ -6,6 +6,7 @@ To add a new oscillator's MSF implementation, start in ``dynamics.py``.
 from network_dynamics.core.msf.analysis import (
     find_msf_zeros_jax,
     find_zero_brackets,
+    merge_close_brackets,
     stable_intervals_from_brackets,
 )
 from network_dynamics.core.msf.config import (
@@ -45,6 +46,7 @@ __all__ = [
     "find_msf_zeros_jax",
     "find_zero_brackets",
     "get_msf_dynamics",
+    "merge_close_brackets",
     "inner_coupling_matrix_jax",
     "lorenz_jacobian_jax",
     "lorenz_rhs_jax",

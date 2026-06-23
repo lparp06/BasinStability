@@ -18,7 +18,7 @@ def qr_update_jax(tangent_matrix: jnp.ndarray, log_stretch: jnp.ndarray):
 
     Q, R = jnp.linalg.qr(tangent_matrix)
     diagonal = jnp.diag(R)
-    log_stretch = log_stretch + jnp.log(jnp.abs(diagonal) + 1e-30)
+    log_stretch = log_stretch + jnp.log(jnp.fmax(jnp.abs(diagonal), 1e-15))
     return Q, log_stretch
 
 
@@ -58,39 +58,41 @@ def msf_value_from_state_jax_impl(
     qr_interval_steps: int,
     dynamics: str = "rossler",
 ):
-    """Compute Psi(K) after the K-independent transient has already run."""
+    """Compute Psi(K) after the K-independent transient has already run.
+
+    The loop is structured as n_qr outer iterations, each running exactly
+    qr_interval_steps RK4 steps then one unconditional QR.  This eliminates
+    lax.cond from the inner loop, which was the dominant cause of 2-hour XLA
+    compilation times when vmapped over large K batches on GPU.
+    """
 
     dimension = transient_state.shape[0]
     state = transient_state
     tangent_matrix = jnp.eye(dimension, dtype=transient_state.dtype)
     log_stretch = jnp.zeros(dimension, dtype=transient_state.dtype)
 
-    def body_fun(step, carry):
+    # Both static args, so n_qr is a compile-time constant.
+    n_qr = measurement_steps // qr_interval_steps
+
+    def outer_scan_body(carry, _):
         state, tangent_matrix, log_stretch = carry
-        state, tangent_matrix = rk4_step_msf_jax(
-            state,
-            tangent_matrix,
-            dt,
-            K,
-            H,
-            params,
-            dynamics,
-        )
 
-        do_qr = ((step + 1) % qr_interval_steps) == 0
-        tangent_matrix, log_stretch = lax.cond(
-            do_qr,
-            lambda args: qr_update_jax(*args),
-            lambda args: args,
-            operand=(tangent_matrix, log_stretch),
-        )
-        return state, tangent_matrix, log_stretch
+        # Python for-loop: unrolled at trace time into qr_interval_steps
+        # sequential RK4 calls baked into one XLA kernel body.
+        # This avoids a nested while_loop which is slow on GPU.
+        for _ in range(qr_interval_steps):
+            state, tangent_matrix = rk4_step_msf_jax(
+                state, tangent_matrix, dt, K, H, params, dynamics
+            )
 
-    state, tangent_matrix, log_stretch = lax.fori_loop(
-        0,
-        measurement_steps,
-        body_fun,
+        tangent_matrix, log_stretch = qr_update_jax(tangent_matrix, log_stretch)
+        return (state, tangent_matrix, log_stretch), None
+
+    (state, tangent_matrix, log_stretch), _ = lax.scan(
+        outer_scan_body,
         (state, tangent_matrix, log_stretch),
+        xs=None,
+        length=n_qr,
     )
 
     lyapunov_exponents = log_stretch / (measurement_steps * dt)

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import multiprocessing
+import os
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
@@ -27,10 +29,30 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+
+def _setup_jax_compilation_cache() -> str | None:
+    """Enable JAX persistent compilation cache if JAX_COMPILATION_CACHE_DIR is set."""
+    cache_dir = os.environ.get("JAX_COMPILATION_CACHE_DIR")
+    if not cache_dir:
+        return None
+    os.makedirs(cache_dir, exist_ok=True)
+    try:
+        jax.config.update("jax_compilation_cache_dir", cache_dir)
+        return cache_dir
+    except Exception:
+        pass
+    try:
+        from jax.experimental.compilation_cache import compilation_cache as cc
+        cc.set_cache_dir(cache_dir)
+        return cache_dir
+    except Exception:
+        return None
+
 from network_dynamics.core.msf import (
     MSFConfig,
     config_to_jax_arrays,
     find_zero_brackets,
+    merge_close_brackets,
     normalize_msf_dynamics,
     scan_msf_jax,
     stable_intervals_from_brackets,
@@ -101,6 +123,24 @@ def parse_args():
         "--msf-cache",
         default="outputs/msf_zero_cache.csv",
         help="CSV cache path for MSF zeros and settings.",
+    )
+    parser.add_argument(
+        "--min-zero-separation",
+        type=float,
+        default=1.0,
+        help=(
+            "Merge sign-change brackets closer than this K distance into one zero. "
+            "Eliminates spurious crossings from numerical noise near the true zero."
+        ),
+    )
+    parser.add_argument(
+        "--progress-chunks",
+        type=int,
+        default=10,
+        help=(
+            "Number of sub-batches to split serial work into for progress reporting. "
+            "Ignored when n_workers > 1 (parallel mode reports per completed chunk)."
+        ),
     )
     return parser.parse_args()
 
@@ -173,20 +213,120 @@ def make_chunk_tasks(config, K_values_np, chunk_size, n_workers):
 
 
 def scan_msf_chunk_worker(task):
-    chunk_index, config, start, stop, K_chunk = task
-    psi_values, exponent_values = scan_msf_batch(config, K_chunk)
+    # MPS (Apple Metal) does not support float64. Even if MPS was selected as
+    # the default backend when this module was imported, the CPU backend is
+    # always present alongside it. Routing computation through the CPU device
+    # avoids the float64 restriction without requiring any environment variable
+    # tricks that race against JAX's module-level backend initialization.
+    cpu_devices = jax.devices("cpu")
+    with jax.default_device(cpu_devices[0]):
+        chunk_index, config, start, stop, K_chunk = task
+        psi_values, exponent_values = scan_msf_batch(config, K_chunk)
     return chunk_index, start, stop, psi_values, exponent_values
 
 
-def scan_msf_serial(config, tasks, total_K):
+def _fmt_seconds(s):
+    """Format a duration in seconds as a human-readable string."""
+    s = int(s)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def scan_msf_serial(config, tasks, total_K, progress_chunks=10):
     psi_chunks = []
     exponent_chunks = []
 
-    for _chunk_index, _config, start, stop, K_chunk in tasks:
-        print(f"Scanning K chunk {start}:{stop} of {total_K}", flush=True)
-        psi_chunk, exponent_chunk = scan_msf_batch(config, K_chunk)
-        psi_chunks.append(psi_chunk)
-        exponent_chunks.append(exponent_chunk)
+    sub_size = max(1, math.ceil(total_K / max(1, progress_chunks * len(tasks))))
+    total_sub = sum(math.ceil(len(task[4]) / sub_size) for task in tasks)
+    completed_sub = 0
+    scan_start = time.perf_counter()
+    batch_times: list[float] = []
+
+    print(
+        f"Serial scan: {total_K} K values in {total_sub} batches of ~{sub_size} each.",
+        flush=True,
+    )
+    print(
+        "  Batch 1 includes JAX JIT compilation — it will be slower than the rest.",
+        flush=True,
+    )
+
+    for _chunk_index, _config, chunk_start, _chunk_stop, K_chunk in tasks:
+        sub_psi: list[np.ndarray] = []
+        sub_exp: list[np.ndarray] = []
+
+        # Pad K_chunk so every sub-batch is exactly sub_size elements.
+        # A mismatched last batch would cause JAX to recompile the entire
+        # GPU kernel (another ~20 min), so we avoid it by padding with the
+        # last K value and trimming the results afterward.
+        real_len = len(K_chunk)
+        n_subs = math.ceil(real_len / sub_size)
+        pad_len = n_subs * sub_size - real_len
+        if pad_len > 0:
+            K_chunk_padded = np.concatenate(
+                [K_chunk, np.full(pad_len, K_chunk[-1])]
+            )
+        else:
+            K_chunk_padded = K_chunk
+
+        for s in range(0, len(K_chunk_padded), sub_size):
+            e = s + sub_size  # always exactly sub_size after padding
+            k_start_val = chunk_start + s
+            k_end_val = chunk_start + min(e, real_len)
+            batch_label = f"{completed_sub + 1}/{total_sub}"
+            is_first = completed_sub == 0
+
+            print(
+                f"  [{batch_label}] K[{k_start_val}:{k_end_val}]  starting"
+                + ("  (JIT compile on first batch)" if is_first else ""),
+                flush=True,
+            )
+
+            batch_start = time.perf_counter()
+            psi_sub, exp_sub = scan_msf_batch(config, K_chunk_padded[s:e])
+            batch_elapsed = time.perf_counter() - batch_start
+            batch_times.append(batch_elapsed)
+
+            # Trim padding from the last sub-batch before storing.
+            keep = min(sub_size, real_len - s)
+            sub_psi.append(psi_sub[:keep])
+            sub_exp.append(exp_sub[:keep])
+            completed_sub += 1
+
+            total_elapsed = time.perf_counter() - scan_start
+            k_done = chunk_start + e
+            pct = 100.0 * completed_sub / total_sub
+            k_per_s = k_done / total_elapsed if total_elapsed > 0 else 0.0
+
+            if completed_sub >= 2:
+                avg_batch = sum(batch_times[1:]) / len(batch_times[1:])
+                remaining_batches = total_sub - completed_sub
+                eta = avg_batch * remaining_batches
+                eta_str = f"  ETA ~{_fmt_seconds(eta)}"
+            elif completed_sub == 1:
+                eta_str = "  (ETA available after batch 2)"
+            else:
+                eta_str = ""
+
+            compile_note = (
+                f"  [compile+run: {_fmt_seconds(batch_times[0])}]"
+                if is_first
+                else ""
+            )
+            print(
+                f"  [{batch_label}] done  "
+                f"this={_fmt_seconds(batch_elapsed)}  "
+                f"total={_fmt_seconds(total_elapsed)}  "
+                f"{pct:.0f}%  {k_per_s:.1f} K/s"
+                f"{compile_note}{eta_str}",
+                flush=True,
+            )
+
+        psi_chunks.append(np.concatenate(sub_psi))
+        exponent_chunks.append(np.concatenate(sub_exp))
 
     return np.concatenate(psi_chunks), np.concatenate(exponent_chunks)
 
@@ -198,10 +338,11 @@ def scan_msf_parallel(tasks, total_K, n_workers):
 
     print(
         f"Scanning {total_K} K values across {len(tasks)} chunks "
-        f"with {n_workers} workers...",
+        f"with {n_workers} workers (CPU/XLA per worker)...",
         flush=True,
     )
 
+    scan_start = time.perf_counter()
     with ProcessPoolExecutor(max_workers=n_workers, mp_context=context) as executor:
         future_to_task = {
             executor.submit(scan_msf_chunk_worker, task): task
@@ -213,16 +354,24 @@ def scan_msf_parallel(tasks, total_K, n_workers):
             chunk_index, start, stop, psi_chunk, exponent_chunk = future.result()
             psi_chunks[chunk_index] = psi_chunk
             exponent_chunks[chunk_index] = exponent_chunk
+            elapsed = time.perf_counter() - scan_start
+            remaining = len(tasks) - completed
+            eta_str = (
+                f"  ETA ~{_fmt_seconds(elapsed / completed * remaining)}"
+                if remaining > 0
+                else ""
+            )
             print(
                 f"Finished K chunk {start}:{stop} "
-                f"({completed}/{len(tasks)})",
+                f"({completed}/{len(tasks)})  "
+                f"elapsed {_fmt_seconds(elapsed)}{eta_str}",
                 flush=True,
             )
 
     return np.concatenate(psi_chunks), np.concatenate(exponent_chunks)
 
 
-def scan_msf(config, K_values_np, chunk_size, n_workers):
+def scan_msf(config, K_values_np, chunk_size, n_workers, progress_chunks=10):
     tasks = make_chunk_tasks(
         config=config,
         K_values_np=K_values_np,
@@ -235,6 +384,7 @@ def scan_msf(config, K_values_np, chunk_size, n_workers):
             config=config,
             tasks=tasks,
             total_K=len(K_values_np),
+            progress_chunks=progress_chunks,
         )
 
     return scan_msf_parallel(
@@ -252,11 +402,18 @@ def write_csv(path, K_values, psi_values, exponent_values):
             writer.writerow([K, psi, *exponents.tolist()])
 
 
-def print_summary(args, config):
+def print_summary(args, config, cache_dir=None):
     print("MSF scan")
     print("=" * 40)
     print("JAX backend:", jax.default_backend())
     print("JAX devices:", jax.devices())
+    if cache_dir:
+        print(f"JAX compile cache: {cache_dir}  (first run compiles, subsequent runs reuse)")
+    else:
+        print(
+            "JAX compile cache: OFF  "
+            "(set JAX_COMPILATION_CACHE_DIR to cache compiled kernels across runs)"
+        )
     print(
         "Parameters:",
         f"dynamics={config.dynamics}, a={config.a}, b={config.b}, c={config.c}, "
@@ -273,24 +430,42 @@ def print_summary(args, config):
     print(
         "K scan:",
         f"K_min={args.K_min}, K_max={args.K_max}, n_K={args.n_K}, "
-        f"chunk_size={args.chunk_size}, workers={args.n_workers}",
+        f"chunk_size={args.chunk_size}, workers={args.n_workers}, "
+        f"progress_chunks={args.progress_chunks}",
     )
+    steps_per_K = config.transient_steps + config.measurement_steps
+    print(f"Steps per K value: {steps_per_K:,}  ({config.transient_steps:,} transient + {config.measurement_steps:,} measurement)")
+    print(f"Total RK4 steps across all K: {args.n_K * steps_per_K:,}")
+    if args.n_workers <= 1:
+        print(
+            f"GPU/serial note: batch 1/{args.progress_chunks} will be slower than the rest "
+            f"due to JAX JIT compilation. Use --progress-chunks to control update frequency."
+        )
     print()
 
 
 def warn_if_msf_step_is_large(dt, K_max):
     stiffness_scale = dt * K_max
-    if stiffness_scale <= 2.5:
-        return
 
-    print(
-        "WARNING: dt*K_max is large for explicit RK4 "
-        f"({dt}*{K_max}={stiffness_scale:.3g}). "
-        "High-K MSF values may show artificial positive growth; "
-        "try a smaller --dt such as 0.01 or 0.005.",
-        flush=True,
-    )
-    print()
+    if stiffness_scale > 2.5:
+        print(
+            f"WARNING: dt*K_max={stiffness_scale:.3g} exceeds RK4 stability limit (~2.785). "
+            "MSF values at high K will diverge. Reduce --dt.",
+            flush=True,
+        )
+        print()
+    elif stiffness_scale > 0.1:
+        print(
+            f"ACCURACY WARNING: dt*K_max={stiffness_scale:.3g} ({dt}*{K_max}). "
+            "For diagonal coupling the variational equation stiffness scales with K, "
+            "so RK4 accuracy degrades at high K. "
+            "Zero crossings above K~{:.0f} may be shifted by O(dt^4*K^5) error. "
+            "The paper uses dt=0.001; for K_max={} that gives dt*K_max={:.3g}.".format(
+                K_max / 10, K_max, 0.001 * K_max
+            ),
+            flush=True,
+        )
+        print()
 
 
 def main():
@@ -305,7 +480,8 @@ def main():
     if args.n_workers <= 0:
         raise ValueError("n_workers must be positive.")
 
-    print_summary(args, config)
+    cache_dir = _setup_jax_compilation_cache()
+    print_summary(args, config, cache_dir=cache_dir)
     warn_if_msf_step_is_large(config.dt, args.K_max)
     K_values = np.linspace(args.K_min, args.K_max, args.n_K)
 
@@ -315,10 +491,12 @@ def main():
         K_values_np=K_values,
         chunk_size=args.chunk_size,
         n_workers=args.n_workers,
+        progress_chunks=args.progress_chunks,
     )
     elapsed = time.perf_counter() - start
 
-    brackets = find_zero_brackets(K_values, psi_values)
+    raw_brackets = find_zero_brackets(K_values, psi_values)
+    brackets = merge_close_brackets(raw_brackets, min_separation=args.min_zero_separation)
     stable_intervals = stable_intervals_from_brackets(brackets)
     cache_key = make_msf_cache_key(
         config=config,
@@ -327,17 +505,16 @@ def main():
         n_K=args.n_K,
     )
 
+    zeros = [0.5 * (left + right) for left, right in brackets]
+
     print()
     print("MSF scan complete")
     print("-" * 40)
     print("Seconds:", f"{elapsed:.3f}")
     print("Psi min:", float(np.nanmin(psi_values)))
     print("Psi max:", float(np.nanmax(psi_values)))
-    print("Zero brackets:", brackets)
-    print("Stable K intervals from brackets:", stable_intervals)
-
-    zeros = [0.5 * (left + right) for left, right in brackets]
-    print("Midpoint zeros:", zeros)
+    print("MSF zeros (K):", [round(z, 4) for z in zeros])
+    print("Stable K intervals:", stable_intervals)
 
     cached = find_cached_msf_result(
         cache_path=args.msf_cache,

@@ -450,6 +450,7 @@ def run_basin_scan(request, graph, interval):
 
     rows = []
     total_strengths = len(strengths)
+    scan_start = time.perf_counter()
 
     for index, strength in enumerate(strengths, start=1):
         config = make_basin_config(
@@ -458,13 +459,20 @@ def run_basin_scan(request, graph, interval):
             coupling_strength=strength,
         )
 
+        elapsed_total = time.perf_counter() - scan_start
+        remaining = total_strengths - index
+        eta_str = (
+            f"  ETA ~{elapsed_total / (index - 1) * remaining:.0f}s"
+            if index > 1 and remaining > 0
+            else ""
+        )
         print(
-            f"Running basin stability {index}/{total_strengths} "
-            f"for coupling_strength={format_float(strength)} "
-            f"on backend={request.backend}",
+            f"[{index}/{total_strengths}] "
+            f"coupling_strength={format_float(strength)}  "
+            f"elapsed {elapsed_total:.0f}s{eta_str}",
             flush=True,
         )
-        start = time.perf_counter()
+        run_start = time.perf_counter()
         if request.backend == "gpu":
             summary = basin_stability_gpu_fast_from_initial_conditions(
                 config=config,
@@ -480,11 +488,17 @@ def run_basin_scan(request, graph, interval):
                 progress_interval=request.progress_interval,
                 progress_stream=sys.__stdout__,
             )
-        elapsed = time.perf_counter() - start
+        elapsed = time.perf_counter() - run_start
+        elapsed_total = time.perf_counter() - scan_start
+        remaining = total_strengths - index
+        eta_str = (
+            f"  ETA ~{elapsed_total / index * remaining:.0f}s remaining"
+            if remaining > 0
+            else ""
+        )
         print(
-            f"Finished coupling_strength={format_float(strength)} "
-            f"basin_stability={format_float(summary.basin_stability)} "
-            f"seconds={elapsed:.3f}",
+            f"  -> basin={format_float(summary.basin_stability)}  "
+            f"this={elapsed:.1f}s  total={elapsed_total:.0f}s{eta_str}",
             flush=True,
         )
         print()
