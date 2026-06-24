@@ -7,7 +7,7 @@ import numpy as np
 import networkx as nx
 
 from network_dynamics.core.basin_common import SUCCESS_DEFINITIONS
-from network_dynamics.core.oscillators import normalize_dynamics_type
+from network_dynamics.core.oscillators import DYNAMICS_PARAMETER_COUNTS, normalize_dynamics_type
 
 
 @dataclass
@@ -59,9 +59,11 @@ class BasinConfig:
 
         self.dynamics = normalize_dynamics_type(self.dynamics)
 
-        if len(self.parameters) != 3:
+        expected_n_params = DYNAMICS_PARAMETER_COUNTS.get(self.dynamics, 3)
+        if len(self.parameters) != expected_n_params:
             raise ValueError(
-                "parameters must contain three values for the selected dynamics."
+                f"dynamics={self.dynamics!r} requires {expected_n_params} parameters, "
+                f"got {len(self.parameters)}."
             )
 
         if self.coupling_strength < 0:

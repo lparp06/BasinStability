@@ -90,6 +90,121 @@ def lorenz_jacobian_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
     )
 
 
+def chen_rhs_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Chen vector field F(s), with params=(a, beta, c)."""
+
+    x, y, z = state
+    a, b, c = params  # a=35, b=beta=8/3, c=25
+
+    return jnp.array(
+        [
+            a * (y - x),
+            (c - a - z) * x + c * y,
+            x * y - b * z,
+        ],
+        dtype=state.dtype,
+    )
+
+
+def chen_jacobian_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Analytical Jacobian DF(s) for the Chen vector field."""
+
+    x, y, z = state
+    a, b, c = params  # a=35, b=beta=8/3, c=25
+    return jnp.array(
+        [
+            [-a, a, 0.0],
+            [c - a - z, c, -x],
+            [y, x, -b],
+        ],
+        dtype=state.dtype,
+    )
+
+
+def chua_rhs_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Chua's circuit vector field F(s).
+
+    params = (alpha, beta, gamma, a_nl, b_nl)
+    """
+
+    x, y, z = state
+    alpha, beta, gamma, a_nl, b_nl = params
+
+    f = jnp.where(
+        jnp.abs(x) <= 1.0,
+        -a_nl * x,
+        jnp.where(x > 1.0, -b_nl * x - a_nl + b_nl, -b_nl * x + a_nl - b_nl),
+    )
+
+    return jnp.array(
+        [
+            alpha * (y - x + f),
+            x - y + z,
+            -beta * y - gamma * z,
+        ],
+        dtype=state.dtype,
+    )
+
+
+def chua_jacobian_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Analytical Jacobian DF(s) for Chua's circuit.
+
+    The piecewise f'(x) = -b_nl for |x|>1, -a_nl for |x|<1.
+    Row 0: d/dx[alpha*(y - x + f(x))] = alpha*(-1 + f'(x)) = -alpha*(1 + f'_coeff)
+    """
+
+    x, _y, _z = state
+    alpha, beta, gamma, a_nl, b_nl = params
+
+    f_prime_coeff = jnp.where(jnp.abs(x) > 1.0, b_nl, a_nl)
+    df_dx = -alpha * (1.0 + f_prime_coeff)
+
+    return jnp.array(
+        [
+            [df_dx,   alpha,  0.0   ],
+            [1.0,    -1.0,    1.0   ],
+            [0.0,    -beta,  -gamma ],
+        ],
+        dtype=state.dtype,
+    )
+
+
+def hr_rhs_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Hindmarsh-Rose neuron vector field F(s), with params=(I, r, s).
+
+    Eq. (16) in PhysRevE.80.036204.  Structural constants 3, 5, 1.6 are fixed.
+    """
+
+    x, y, z = state
+    I, r, s = params
+    return jnp.array(
+        [
+            y + 3.0 * x**2 - x**3 - z + I,
+            1.0 - 5.0 * x**2 - y,
+            -r * z + r * s * (x + 1.6),
+        ],
+        dtype=state.dtype,
+    )
+
+
+def hr_jacobian_jax(state: jnp.ndarray, params: jnp.ndarray) -> jnp.ndarray:
+    """Analytical Jacobian DF(s) for the Hindmarsh-Rose vector field.
+
+    Eq. (17) in PhysRevE.80.036204.
+    """
+
+    x, _y, _z = state
+    _I, r, s = params
+    return jnp.array(
+        [
+            [6.0 * x - 3.0 * x**2,  1.0, -1.0],
+            [-10.0 * x,             -1.0,  0.0],
+            [r * s,                  0.0,  -r ],
+        ],
+        dtype=state.dtype,
+    )
+
+
 MSF_DYNAMICS = {
     "rossler": MSFDynamics(
         rhs=rossler_rhs_jax,
@@ -99,9 +214,19 @@ MSF_DYNAMICS = {
         rhs=lorenz_rhs_jax,
         jacobian=lorenz_jacobian_jax,
     ),
+    "chen": MSFDynamics(
+        rhs=chen_rhs_jax,
+        jacobian=chen_jacobian_jax,
+    ),
+    "chua": MSFDynamics(
+        rhs=chua_rhs_jax,
+        jacobian=chua_jacobian_jax,
+    ),
+    "hr": MSFDynamics(
+        rhs=hr_rhs_jax,
+        jacobian=hr_jacobian_jax,
+    ),
 }
-
-# TODO: Add future oscillator MSF implementations above and register them here.
 
 
 def normalize_msf_dynamics(dynamics: str) -> str:
@@ -110,6 +235,12 @@ def normalize_msf_dynamics(dynamics: str) -> str:
         "rössler": "rossler",
         "roessler": "rossler",
         "lorenz": "lorenz",
+        "chen": "chen",
+        "chua": "chua",
+        "hr": "hr",
+        "hindmarsh_rose": "hr",
+        "hindmarsh-rose": "hr",
+        "hindmarshrose": "hr",
     }
 
     normalized = aliases.get(dynamics.lower())

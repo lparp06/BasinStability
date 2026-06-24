@@ -52,17 +52,20 @@ from network_dynamics.core.msf import (
     MSFConfig,
     config_to_jax_arrays,
     find_zero_brackets,
+    interpolate_zeros,
     merge_close_brackets,
     normalize_msf_dynamics,
-    scan_msf_jax,
+    scan_msf_from_transient_state_jax,
     stable_intervals_from_brackets,
 )
+from network_dynamics.core.msf.integration import run_transient_jax
 from network_dynamics.core.msf_cache import (
     append_msf_cache_result,
     find_cached_msf_result,
     make_msf_cache_key,
 )
 from network_dynamics.core.dynamics_parameters import (
+    DYNAMICS_MSF_INITIAL_STATES,
     format_parameter_defaults,
     resolve_dynamics_parameters,
 )
@@ -91,11 +94,36 @@ def parse_args():
         help="Third dynamics parameter. Omit to use the selected dynamics default.",
     )
     parser.add_argument(
+        "--d",
+        type=float,
+        default=None,
+        help="Fourth dynamics parameter (Chua: a_nl, inner-region slope). Omit to use default.",
+    )
+    parser.add_argument(
+        "--e",
+        type=float,
+        default=None,
+        help="Fifth dynamics parameter (Chua: b_nl, outer-region slope). Omit to use default.",
+    )
+    parser.add_argument(
         "--dynamics",
         default="rossler",
         help=(
             "Oscillator dynamics for the synchronized trajectory and "
             "variational equation."
+        ),
+    )
+    parser.add_argument(
+        "--initial-state",
+        type=float,
+        nargs=3,
+        default=None,
+        metavar=("X", "Y", "Z"),
+        help=(
+            "Initial state for the synchronized oscillator transient. "
+            "Must be inside the basin of the attractor. "
+            "Defaults are dynamics-specific (e.g. Chua uses 0.1 0 0, "
+            "not 1 1 1 which escapes to infinity)."
         ),
     )
     parser.add_argument("--target", type=int, default=0)
@@ -147,17 +175,33 @@ def parse_args():
 
 def make_config(args):
     dynamics = normalize_msf_dynamics(args.dynamics)
-    a, b, c = resolve_dynamics_parameters(
+    params = resolve_dynamics_parameters(
         dynamics=dynamics,
         a=args.a,
         b=args.b,
         c=args.c,
+        d=getattr(args, "d", None),
+        e=getattr(args, "e", None),
     )
+    # Unpack into positional slots; MSFConfig accepts up to 5 (a–e).
+    a, b, c = params[0], params[1], params[2]
+    d = params[3] if len(params) > 3 else 0.0
+    e = params[4] if len(params) > 4 else 0.0
+
+    # Use the per-dynamics safe default, or the user-supplied override.
+    if args.initial_state is not None:
+        initial_state = tuple(args.initial_state)
+    else:
+        initial_state = DYNAMICS_MSF_INITIAL_STATES.get(dynamics, (1.0, 1.0, 1.0))
+
     return MSFConfig(
         a=a,
         b=b,
         c=c,
+        d=d,
+        e=e,
         dynamics=dynamics,
+        initial_state=initial_state,
         target=args.target,
         source=args.source,
         dt=args.dt,
@@ -170,13 +214,29 @@ def make_config(args):
 def scan_msf_batch(config, K_values_np):
     params, initial_state, H = config_to_jax_arrays(config)
 
+    # Run and validate the transient before committing to the expensive
+    # measurement phase. initial_state must be inside the attractor basin;
+    # e.g. (1,1,1) escapes to ~1e100 for Chua, corrupting all Psi values.
+    transient_state = run_transient_jax(
+        initial_state, config.transient_steps, config.dt, params, config.dynamics
+    )
+    transient_state.block_until_ready()
+    ts_np = np.asarray(jax.device_get(transient_state))
+
+    if not np.all(np.isfinite(ts_np)) or np.max(np.abs(ts_np)) > 1e6:
+        raise ValueError(
+            f"Transient integration diverged: state={ts_np}. "
+            "The initial_state is outside the attractor basin. "
+            "For Chua try --initial-state 0.1 0 0; "
+            "for Rössler/Lorenz (1 1 1) is usually safe."
+        )
+
     K_values = jnp.asarray(K_values_np, dtype=jnp.float64)
-    psi_values, exponent_values = scan_msf_jax(
+    psi_values, exponent_values = scan_msf_from_transient_state_jax(
         K_values,
-        initial_state,
+        transient_state,
         H,
         params,
-        config.transient_steps,
         config.measurement_steps,
         config.dt,
         config.qr_interval_steps,
@@ -414,9 +474,14 @@ def print_summary(args, config, cache_dir=None):
             "JAX compile cache: OFF  "
             "(set JAX_COMPILATION_CACHE_DIR to cache compiled kernels across runs)"
         )
+    extra_params = (
+        f", d={config.d}, e={config.e}" if config.dynamics == "chua" else ""
+    )
     print(
         "Parameters:",
-        f"dynamics={config.dynamics}, a={config.a}, b={config.b}, c={config.c}, "
+        f"dynamics={config.dynamics}, a={config.a}, b={config.b}, c={config.c}"
+        f"{extra_params}, "
+        f"initial_state={config.initial_state}, "
         f"coupling={config.source + 1}->{config.target + 1}",
     )
     print("Registered defaults:", format_parameter_defaults())
@@ -441,6 +506,14 @@ def print_summary(args, config, cache_dir=None):
             f"GPU/serial note: batch 1/{args.progress_chunks} will be slower than the rest "
             f"due to JAX JIT compilation. Use --progress-chunks to control update frequency."
         )
+    print(
+        "Paper-accurate settings (PhysRevE.80.036204, dt=0.001):\n"
+        "  Rossler/Lorenz/Chen/Chua: --dt 0.001 --transient-time 100 --measurement-time 300\n"
+        "  HR neuron: --dt 0.001 --transient-time 1000 --measurement-time 300\n"
+        "    (HR slow-adaptation timescale 1/r≈167 time units; short transients give wrong λ)\n"
+        "  Lorenz β=2 (Fig. 2): default --b 2.0 | Lorenz β=8/3 (Fig. 3): --b 2.6667\n"
+        "  Coupling i→j: --source <i-1> --target <j-1>  (e.g. 2→1: --source 1 --target 0)"
+    )
     print()
 
 
@@ -505,7 +578,8 @@ def main():
         n_K=args.n_K,
     )
 
-    zeros = [0.5 * (left + right) for left, right in brackets]
+    zeros = interpolate_zeros(K_values, psi_values, brackets)
+    midpoints = [0.5 * (left + right) for left, right in brackets]
 
     print()
     print("MSF scan complete")
@@ -513,7 +587,8 @@ def main():
     print("Seconds:", f"{elapsed:.3f}")
     print("Psi min:", float(np.nanmin(psi_values)))
     print("Psi max:", float(np.nanmax(psi_values)))
-    print("MSF zeros (K):", [round(z, 4) for z in zeros])
+    print("MSF zeros (K, interpolated):", [round(z, 4) for z in zeros])
+    print("MSF zeros (K, midpoints):   ", [round(z, 4) for z in midpoints])
     print("Stable K intervals:", stable_intervals)
 
     cached = find_cached_msf_result(

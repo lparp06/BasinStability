@@ -18,26 +18,53 @@ PROJECT_DIR="$HOME/GenerateDynamics"
 PYTHON="$PROJECT_DIR/.venv/bin/python"
 
 # ======================== MSF SCAN SETTINGS ========================
-# Change these values for a typical run. SOURCE and TARGET are zero-based
-# state-component indices: 0=x, 1=y, 2=z.
-DYNAMICS="rossler"             # rossler or lorenz
-SOURCE=0                       # coupled-from state component
-TARGET=0                       # coupled-to state component
+# SOURCE and TARGET are 0-based state indices: 0=x, 1=y, 2=z.
+# Coupling notation: source->target  (e.g. source=2,target=2 is z->z).
+DYNAMICS="lorenz"              # rossler | lorenz
+SOURCE=2                       # coupled-from component (0=x,1=y,2=z)
+TARGET=2                       # coupled-to component
 
-DT=0.05                        # RK4 time step
-TRANSIENT_TIME=100.0           # discarded synchronization time
-MEASUREMENT_TIME=300.0         # Lyapunov-exponent measurement time
-QR_INTERVAL_STEPS=10           # steps between QR reorthonormalizations
+# ---- Time-stepping ------------------------------------------------
+# dt=0.001 matches the paper and keeps RK4 accurate at high K.
+# Never use dt > 0.005 if K_MAX > 20 — the variational equation
+# accumulates O(dt^4 * K^5) error that shifts zero locations.
+DT=0.001
 
-K_MIN=0.0                      # beginning of MSF coupling scan
-K_MAX=10.0                     # end of MSF coupling scan
-N_K=101                        # number of evenly spaced K values
+# ---- Integration time --------------------------------------------
+# These match the paper (Huang et al. 2009):
+#   ~10^4 Lorenz orbital periods (~0.9 tu each) for transient
+#   ~3x10^4 Lorenz orbital periods for Lyapunov measurement
+# For Rössler (period ~6.3 tu) the same cycle counts cost more wall
+# time; use MEASUREMENT_TIME=50000 for comparable paper accuracy.
+#
+# Rule of thumb for basin-stability work (zeros don't need 3-decimal
+# precision, just ±0.1 K accuracy):
+#   TRANSIENT_TIME=2000   MEASUREMENT_TIME=10000   (fast, good enough)
+#   TRANSIENT_TIME=10000  MEASUREMENT_TIME=30000   (paper-quality)
+TRANSIENT_TIME=10000.0
+MEASUREMENT_TIME=30000.0
 
-# Number of progress updates during the scan. On GPU, JAX vmaps ALL K values
-# in a sub-batch in parallel — larger sub-batches = better GPU utilization.
-# PROGRESS_CHUNKS=2 gives one mid-scan update with minimal GPU overhead.
-# Raising this significantly (e.g. 10) can make the GPU run 5-10x slower
-# because each sub-batch uses fewer parallel threads.
+# QR reorthonormalization interval (steps). Must evenly divide
+# MEASUREMENT_TIME/DT. 10 is standard; don't change without reason.
+QR_INTERVAL_STEPS=10
+
+# ---- K scan range ------------------------------------------------
+# Choose K_MAX to cover all expected MSF zeros:
+#   Lorenz  3->3 (3 zeros): K_MAX=100   N_K=1001   (dK=0.1)
+#   Lorenz  other:          K_MAX=30    N_K=301    (dK=0.1)
+#   Rössler 1->1 (2 zeros): K_MAX=10    N_K=1001   (dK=0.01)
+#   Rössler other:          K_MAX=100   N_K=1001   (dK=0.1)
+#
+# Zero precision = dK/2 from bracket midpoint, or better with
+# linear interpolation (now applied automatically).
+K_MIN=0.0
+K_MAX=100.0
+N_K=1001
+
+# ---- GPU progress ------------------------------------------------
+# Each chunk is a separate jax.vmap kernel launch.
+# PROGRESS_CHUNKS=2 → one progress print at 50%, best GPU throughput.
+# Increase only if you want more frequent updates during a long run.
 PROGRESS_CHUNKS=2
 # ===================================================================
 

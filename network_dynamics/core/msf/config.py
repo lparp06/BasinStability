@@ -18,14 +18,24 @@ from network_dynamics.core.msf.dynamics import normalize_msf_dynamics
 class MSFConfig:
     """Run settings for one 3D oscillator MSF calculation.
 
-    Parameters ``a``, ``b``, and ``c`` are interpreted by the selected
-    dynamics implementation. For Lorenz, they are sigma, beta, and rho.
+    Parameters ``a``–``e`` map to the first five positional parameters of the
+    selected dynamics.  For most systems only ``a``, ``b``, ``c`` are used.
+    Chua's circuit additionally uses ``d`` (a_nl) and ``e`` (b_nl).
+
+    Slot mapping by dynamics:
+      rossler : a, b, c
+      lorenz  : a=sigma, b=beta, c=rho
+      chen    : a, b=beta, c
+      chua    : a=alpha, b=beta, c=gamma, d=a_nl, e=b_nl
+      hr      : a=I, b=r, c=s
     """
 
     dynamics: str = "rossler"
     a: float = 0.2
     b: float = 0.2
     c: float = 9.0
+    d: float = 0.0   # extra param slot (used by chua: a_nl)
+    e: float = 0.0   # extra param slot (used by chua: b_nl)
     initial_state: tuple[float, float, float] = (1.0, 1.0, 1.0)
     target: int = 0
     source: int = 0
@@ -67,10 +77,22 @@ class MSFConfig:
             raise ValueError("target and source must be in {0, 1, 2}.")
 
 
+_DYNAMICS_PARAM_SLOTS = {
+    "rossler": ("a", "b", "c"),
+    "lorenz":  ("a", "b", "c"),
+    "chen":    ("a", "b", "c"),
+    "chua":    ("a", "b", "c", "d", "e"),
+    "hr":      ("a", "b", "c"),
+}
+
+
 def config_to_jax_arrays(config: MSFConfig):
     """Convert a Python config into JAX arrays used by the compiled code."""
 
-    params = jnp.array([config.a, config.b, config.c], dtype=jnp.float64)
+    dynamics = normalize_msf_dynamics(config.dynamics)
+    slots = _DYNAMICS_PARAM_SLOTS[dynamics]
+    params = jnp.array([getattr(config, s) for s in slots], dtype=jnp.float64)
+
     initial_state = jnp.array(config.initial_state, dtype=jnp.float64)
     H = inner_coupling_matrix_jax(
         dimension=3,

@@ -6,6 +6,7 @@ To add a new oscillator's MSF implementation, start in ``dynamics.py``.
 from network_dynamics.core.msf.analysis import (
     find_msf_zeros_jax,
     find_zero_brackets,
+    interpolate_zeros,
     merge_close_brackets,
     stable_intervals_from_brackets,
 )
@@ -16,6 +17,10 @@ from network_dynamics.core.msf.config import (
 from network_dynamics.core.msf.coupling import inner_coupling_matrix_jax
 from network_dynamics.core.msf.dynamics import (
     MSF_DYNAMICS,
+    chen_jacobian_jax,
+    chen_rhs_jax,
+    chua_jacobian_jax,
+    chua_rhs_jax,
     get_msf_dynamics,
     lorenz_jacobian_jax,
     lorenz_rhs_jax,
@@ -35,6 +40,7 @@ from network_dynamics.core.msf.lyapunov import (
     msf_value_from_state_jax_impl,
     msf_value_jax_impl,
     qr_update_jax,
+    scan_msf_from_transient_state_jax,
     scan_msf_jax,
     scan_msf_jax_impl,
 )
@@ -42,10 +48,15 @@ from network_dynamics.core.msf.lyapunov import (
 __all__ = [
     "MSFConfig",
     "MSF_DYNAMICS",
+    "chen_jacobian_jax",
+    "chen_rhs_jax",
+    "chua_jacobian_jax",
+    "chua_rhs_jax",
     "config_to_jax_arrays",
     "find_msf_zeros_jax",
     "find_zero_brackets",
     "get_msf_dynamics",
+    "interpolate_zeros",
     "merge_close_brackets",
     "inner_coupling_matrix_jax",
     "lorenz_jacobian_jax",
@@ -62,6 +73,7 @@ __all__ = [
     "rossler_jacobian_jax",
     "rossler_rhs_jax",
     "run_transient_jax",
+    "scan_msf_from_transient_state_jax",
     "scan_msf_jax",
     "scan_msf_jax_impl",
     "stable_intervals_from_brackets",

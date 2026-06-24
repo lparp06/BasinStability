@@ -48,12 +48,58 @@ def lorenz_jax(state_vector, coupling_matrix, parameters):
     return dx - coupling_matrix @ state_vector
 
 
+def chen_jax(state_vector, coupling_matrix, parameters):
+    """JAX coupled Chen derivative for a single state vector."""
+
+    a, beta, c = parameters
+
+    X = state_vector[0::3]
+    Y = state_vector[1::3]
+    Z = state_vector[2::3]
+
+    dx = jnp.stack(
+        [a * (Y - X), (c - a - Z) * X + c * Y, X * Y - beta * Z],
+        axis=-1,
+    ).ravel()
+
+    return dx - coupling_matrix @ state_vector
+
+
+def chua_jax(state_vector, coupling_matrix, parameters):
+    """JAX coupled Chua's circuit derivative for a single state vector."""
+
+    alpha, beta, gamma, a_nl, b_nl = parameters
+
+    X = state_vector[0::3]
+    Y = state_vector[1::3]
+    Z = state_vector[2::3]
+
+    f = jnp.where(
+        jnp.abs(X) <= 1.0,
+        -a_nl * X,
+        jnp.where(X > 1.0, -b_nl * X - a_nl + b_nl, -b_nl * X + a_nl - b_nl),
+    )
+
+    dx = jnp.stack(
+        [alpha * (Y - X + f), X - Y + Z, -beta * Y - gamma * Z],
+        axis=-1,
+    ).ravel()
+
+    return dx - coupling_matrix @ state_vector
+
+
 def oscillator_jax(state_vector, coupling_matrix, parameters, dynamics_code_value):
     if dynamics_code_value == DYNAMICS_CODES["rossler"]:
         return rossler_jax(state_vector, coupling_matrix, parameters)
 
     if dynamics_code_value == DYNAMICS_CODES["lorenz"]:
         return lorenz_jax(state_vector, coupling_matrix, parameters)
+
+    if dynamics_code_value == DYNAMICS_CODES["chen"]:
+        return chen_jax(state_vector, coupling_matrix, parameters)
+
+    if dynamics_code_value == DYNAMICS_CODES["chua"]:
+        return chua_jax(state_vector, coupling_matrix, parameters)
 
     raise ValueError(f"Unsupported dynamics code: {dynamics_code_value}")
 

@@ -41,6 +41,39 @@ def find_zero_brackets(
     )
 
 
+def interpolate_zeros(
+    K_values: Iterable[float],
+    psi_values: Iterable[float],
+    brackets: list[tuple[float, float]],
+) -> list[float]:
+    """Linearly interpolate zero locations within each bracket.
+
+    More accurate than bracket midpoints when the MSF varies smoothly.
+    For a bracket [K_L, K_R] with Psi(K_L) and Psi(K_R) of opposite sign,
+    the interpolated zero is K_L + (K_R-K_L)*|Psi_L| / (|Psi_L|+|Psi_R|).
+    Falls back to the midpoint if either psi value is non-finite.
+    """
+    K_arr = np.asarray(K_values, dtype=float)
+    psi_arr = np.asarray(psi_values, dtype=float)
+    zeros = []
+
+    for K_left, K_right in brackets:
+        i_left = int(np.searchsorted(K_arr, K_left))
+        i_right = int(np.searchsorted(K_arr, K_right))
+        i_left = min(i_left, len(psi_arr) - 1)
+        i_right = min(i_right, len(psi_arr) - 1)
+        psi_l = psi_arr[i_left]
+        psi_r = psi_arr[i_right]
+
+        denom = abs(psi_l) + abs(psi_r)
+        if not np.isfinite(psi_l) or not np.isfinite(psi_r) or denom == 0:
+            zeros.append(0.5 * (K_left + K_right))
+        else:
+            zeros.append(K_left + (K_right - K_left) * abs(psi_l) / denom)
+
+    return zeros
+
+
 def merge_close_brackets(
     brackets: list[tuple[float, float]],
     min_separation: float = 1.0,

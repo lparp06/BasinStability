@@ -166,3 +166,44 @@ scan_msf_jax = jax.jit(
         "dynamics",
     ),
 )
+
+
+def scan_msf_from_transient_state_jax_impl(
+    K_values: jnp.ndarray,
+    transient_state: jnp.ndarray,
+    H: jnp.ndarray,
+    params: jnp.ndarray,
+    measurement_steps: int,
+    dt: float,
+    qr_interval_steps: int,
+    dynamics: str = "rossler",
+):
+    """Vectorized MSF scan starting from a pre-computed transient state.
+
+    Use this instead of ``scan_msf_jax`` when you want to validate the
+    transient state before committing to the expensive measurement phase.
+    """
+
+    def one_K(K):
+        return msf_value_from_state_jax(
+            K,
+            transient_state,
+            H,
+            params,
+            measurement_steps,
+            dt,
+            qr_interval_steps,
+            dynamics,
+        )
+
+    return jax.vmap(one_K)(K_values)
+
+
+scan_msf_from_transient_state_jax = jax.jit(
+    scan_msf_from_transient_state_jax_impl,
+    static_argnames=(
+        "measurement_steps",
+        "qr_interval_steps",
+        "dynamics",
+    ),
+)
