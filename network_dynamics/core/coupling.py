@@ -42,6 +42,26 @@ def default_x_coupling_matrix(dimension=3):
     return H
 
 
+def rank_one_inner_coupling_matrix(target, source, dimension=3):
+    """
+    Build an inner coupling matrix with one nonzero entry.
+
+    ``target`` is the row receiving the coupled variable, and ``source`` is
+    the column of the variable being coupled.
+    """
+
+    if not (0 <= target < dimension and 0 <= source < dimension):
+        raise ValueError(
+            "target and source must be valid variable indices for "
+            f"dimension={dimension}; got target={target}, source={source}."
+        )
+
+    H = np.zeros((dimension, dimension))
+    H[target, source] = 1.0
+
+    return H
+
+
 def validate_inner_coupling_matrix(H, dimension):
     """
     Check that H has shape (dimension, dimension).

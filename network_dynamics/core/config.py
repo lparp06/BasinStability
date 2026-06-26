@@ -45,7 +45,7 @@ class BasinConfig:
     max_abs_threshold: float = 1e9
 
     # Backend settings
-    backend: str = "serial"
+    backend: str = "cpu"
     n_workers: Optional[int] = None
 
     def validate(self):

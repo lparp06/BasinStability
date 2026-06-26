@@ -23,6 +23,7 @@ from network_dynamics.core.msf.compute import (
 from network_dynamics.core.msf.zeros import find_zeros
 from network_dynamics.core.msf.params import MSFParams
 from network_dynamics.core.msf.compute import find_msf_zeros
+from network_dynamics.core.msf.ranges import K_RANGE, default_k_range
 
 __all__ = [
     "ROSSLER", "LORENZ", "CHEN", "CHUA", "HR",
@@ -34,4 +35,6 @@ __all__ = [
     "find_zeros",
     "find_msf_zeros",
     "MSFParams",
+    "K_RANGE",
+    "default_k_range",
 ]

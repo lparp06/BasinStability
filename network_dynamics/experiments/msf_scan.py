@@ -51,7 +51,7 @@ import numpy as np
 from network_dynamics.core.msf import (
     PARAM_LENGTHS, INITIAL_STATES,
     run_transient, scan_msf, warmup,
-    MSFParams,
+    MSFParams, default_k_range,
 )
 
 
@@ -131,32 +131,6 @@ def parse_args():
     return ap.parse_args()
 
 
-# Per-config K ranges from Huang et al. (2009).
-# Key: (dynamics, source, target)
-_K_RANGE: dict[tuple[str, int, int], tuple[float, float]] = {
-    ("rossler", 0, 0): (0.,  10.),
-    ("rossler", 1, 1): (0.,   5.),
-    ("rossler", 2, 0): (0., 100.),
-    ("lorenz",  0, 0): (0.,  30.),
-    ("lorenz",  0, 1): (0.,  30.),
-    ("lorenz",  1, 0): (0.,  50.),
-    ("lorenz",  1, 1): (0.,  20.),
-    ("lorenz",  2, 2): (0., 100.),
-    ("chen",    0, 1): (0.,  30.),
-    ("chen",    1, 1): (0.,  20.),
-    ("chen",    2, 2): (0., 100.),
-    ("chua",    0, 0): (0.,  20.),
-    ("chua",    0, 1): (0.,   5.),
-    ("chua",    1, 0): (0.,  30.),
-    ("chua",    1, 1): (0.,  10.),
-    ("chua",    1, 2): (0.,  50.),
-    ("chua",    2, 0): (0.,  10.),
-    ("chua",    2, 2): (0.,  10.),
-    ("hr",      0, 0): (0.,   5.),
-    ("hr",      0, 1): (0.,   5.),
-    ("hr",      1, 0): (0.,   5.),
-    ("hr",      1, 1): (0.,   3.),
-}
 
 # Default parameter sets matching the paper configurations
 _DEFAULTS: dict[str, dict] = {
@@ -186,7 +160,7 @@ def main():
     if t_tr is None:
         t_tr = _TRANSIENT_DEFAULTS.get(args.dynamics, 100.0)
 
-    k_defaults = _K_RANGE.get((args.dynamics, args.source, args.target), (0., 10.))
+    k_defaults = default_k_range(args.dynamics, args.source, args.target)
     K_min = args.K_min if args.K_min is not None else k_defaults[0]
     K_max = args.K_max if args.K_max is not None else k_defaults[1]
 

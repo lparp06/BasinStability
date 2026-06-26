@@ -19,8 +19,6 @@ import sys
 import time
 from dataclasses import dataclass
 
-import numpy as np
-
 from network_dynamics.core.basin_common import sample_initial_conditions_batch
 from network_dynamics.core.config import BasinConfig
 from network_dynamics.core.coupling_strengths import (
@@ -38,6 +36,8 @@ from network_dynamics.core.msf_cache import (
 from network_dynamics.core.dynamics_parameters import (
     resolve_dynamics_parameters,
 )
+from network_dynamics.core.coupling import rank_one_inner_coupling_matrix
+from network_dynamics.core.msf import default_k_range
 from network_dynamics.core.oscillators import normalize_dynamics_type
 from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.cpu.basin import basin_stability_cpu_from_initial_conditions
@@ -73,6 +73,8 @@ class ScanRequest:
     a: float
     b: float
     c: float
+    msf_source: int
+    msf_target: int
     K_min: float
     K_max: float
     n_K: int
@@ -107,7 +109,11 @@ def parse_args():
     parser.add_argument(
         "--csv",
         default=None,
-        help="Optional path for coupling-strength and basin-stability results.",
+        help=(
+            "Output CSV path. Defaults to "
+            "outputs/<dynamics>/stability/"
+            "basin_<dynamics>_s<source>_t<target>.csv"
+        ),
     )
     parser.add_argument(
         "--coupling-low",
@@ -169,8 +175,18 @@ def parse_args():
         default=None,
         help="Third dynamics parameter. Omit to use the selected dynamics default.",
     )
-    parser.add_argument("--K-min", type=float, default=0.0)
-    parser.add_argument("--K-max", type=float, default=10.0)
+    parser.add_argument(
+        "--msf-source", type=int, default=0,
+        help="Column index of the 1 in the MSF coupling matrix H (default: 0).",
+    )
+    parser.add_argument(
+        "--msf-target", type=int, default=0,
+        help="Row index of the 1 in the MSF coupling matrix H (default: 0).",
+    )
+    parser.add_argument("--K-min", type=float, default=None,
+                        help="Minimum K for MSF scan (default: from per-oscillator table).")
+    parser.add_argument("--K-max", type=float, default=None,
+                        help="Maximum K for MSF scan (default: from per-oscillator table).")
     parser.add_argument("--n-K", type=int, default=101)
     parser.add_argument(
         "--msf-cache",
@@ -226,6 +242,10 @@ def request_from_args(args):
         c=args.c,
     )
 
+    k_defaults = default_k_range(dynamics, args.msf_source, args.msf_target)
+    K_min = args.K_min if args.K_min is not None else k_defaults[0]
+    K_max = args.K_max if args.K_max is not None else k_defaults[1]
+
     return ScanRequest(
         graph_type=args.graph_type,
         n_nodes=args.n_nodes,
@@ -254,8 +274,10 @@ def request_from_args(args):
         a=a,
         b=b,
         c=c,
-        K_min=args.K_min,
-        K_max=args.K_max,
+        msf_source=args.msf_source,
+        msf_target=args.msf_target,
+        K_min=K_min,
+        K_max=K_max,
         n_K=args.n_K,
         msf_cache=args.msf_cache,
         msf_transient_time=args.msf_transient_time,
@@ -265,14 +287,23 @@ def request_from_args(args):
     )
 
 
+def make_scan_graph(request):
+    return make_graph(
+        graph_type=request.graph_type,
+        n_nodes=request.n_nodes,
+        seed=request.graph_seed,
+        edge_probability=request.edge_probability,
+    )
+
+
 def make_msf_config(request):
     return MSFParams(
         dynamics=request.dynamics,
         a=request.a,
         b=request.b,
         c=request.c,
-        target=0,
-        source=0,
+        target=request.msf_target,
+        source=request.msf_source,
         dt=request.msf_dt,
         transient_time=request.msf_transient_time,
         measurement_time=request.msf_measurement_time,
@@ -305,13 +336,19 @@ def make_basin_config(request, graph, coupling_strength):
     if request.backend == "gpu" and request.integrator != "RK4":
         raise ValueError("GPU backend requires integrator='RK4'.")
 
+    H = rank_one_inner_coupling_matrix(
+        target=request.msf_target,
+        source=request.msf_source,
+        dimension=3,
+    )
+
     return BasinConfig(
         G=graph,
         dynamics=request.dynamics,
         dimension=3,
         parameters=(request.a, request.b, request.c),
         coupling_strength=float(coupling_strength),
-        H=None,
+        H=H,
         tmax=request.tmax,
         dt=request.dt,
         integrator=request.integrator,
@@ -449,6 +486,69 @@ def print_interval_summary(intervals, selected_index):
     print()
 
 
+def find_or_compute_msf_zeros(request):
+    msf_config = make_msf_config(request)
+    warn_if_msf_step_is_large(msf_config.dt, request.K_max)
+    cache_key = make_msf_cache_key(
+        config=msf_config,
+        K_min=request.K_min,
+        K_max=request.K_max,
+        n_K=request.n_K,
+    )
+    cached = find_cached_msf_result(
+        cache_path=request.msf_cache,
+        key=cache_key,
+    )
+
+    if cached is not None:
+        print("Using cached MSF zeros from:", request.msf_cache)
+        return cached["zeros"]
+
+    print("No matching MSF cache entry found. Running MSF scan.")
+    zeros = find_msf_zeros(
+        params_obj=msf_config,
+        K_min=request.K_min,
+        K_max=request.K_max,
+        n_K=request.n_K,
+        verbose=True,
+    )
+    append_msf_cache_result(
+        cache_path=request.msf_cache,
+        key=cache_key,
+        zeros=zeros,
+    )
+    print("Saved MSF zeros to cache:", request.msf_cache)
+    return zeros
+
+
+def resolve_coupling_intervals(request, graph):
+    manual_interval = make_manual_coupling_interval(request)
+
+    if manual_interval is not None:
+        print("Skipping MSF scan because manual coupling bounds were provided.")
+        print()
+        return [manual_interval]
+
+    zeros = find_or_compute_msf_zeros(request)
+    print_zero_summary(zeros)
+    return coupling_strength_intervals_from_zeros(
+        G=graph,
+        msf_zeros=zeros,
+    )
+
+
+def select_interval(intervals, interval_index):
+    if not intervals:
+        return None
+
+    if not (0 <= interval_index < len(intervals)):
+        raise ValueError(
+            f"interval_index must be between 0 and {len(intervals) - 1}."
+        )
+
+    return intervals[interval_index]
+
+
 def run_basin_scan(request, graph, interval):
     strengths = interval_coupling_strengths(
         interval=interval,
@@ -568,7 +668,19 @@ def print_results_table(rows):
         )
 
 
-def write_basin_scan_csv(path, rows, n_trials):
+def _auto_basin_csv_path(dynamics, source, target):
+    """Auto-generate output path for basin-stability scan CSVs."""
+    from pathlib import Path
+
+    return (
+        Path("outputs")
+        / dynamics
+        / "stability"
+        / f"basin_{dynamics}_s{source}_t{target}.csv"
+    )
+
+
+def write_basin_scan_csv(path, rows, n_trials, dynamics):
     """Write basin-stability-versus-coupling rows for plotting or analysis."""
     output_path = os.fspath(path)
     output_dir = os.path.dirname(output_path)
@@ -576,7 +688,7 @@ def write_basin_scan_csv(path, rows, n_trials):
         os.makedirs(output_dir, exist_ok=True)
 
     fieldnames = (
-        "K",
+        "dynamics",
         "coupling_strength",
         "basin_stability",
         "n_trials",
@@ -592,7 +704,7 @@ def write_basin_scan_csv(path, rows, n_trials):
         for row in rows:
             writer.writerow(
                 {
-                    "K": row["coupling_strength"],
+                    "dynamics": dynamics,
                     "coupling_strength": row["coupling_strength"],
                     "basin_stability": row["basin_stability"],
                     "n_trials": n_trials,
@@ -605,82 +717,42 @@ def write_basin_scan_csv(path, rows, n_trials):
             )
 
 
+def write_scan_results(args, request, rows):
+    csv_path = args.csv or _auto_basin_csv_path(
+        request.dynamics,
+        request.msf_source,
+        request.msf_target,
+    )
+    write_basin_scan_csv(
+        csv_path,
+        rows,
+        n_trials=request.n_trials,
+        dynamics=request.dynamics,
+    )
+    print("Wrote CSV:", csv_path)
+
+
 def main():
     args = parse_args()
     request = request_from_args(args)
-    graph = make_graph(
-        graph_type=request.graph_type,
-        n_nodes=request.n_nodes,
-        seed=request.graph_seed,
-        edge_probability=request.edge_probability,
-    )
-    manual_interval = make_manual_coupling_interval(request)
+    graph = make_scan_graph(request)
 
     print_run_header(request, graph)
+    intervals = resolve_coupling_intervals(request, graph)
+    selected_interval = select_interval(intervals, request.interval_index)
 
-    if manual_interval is None:
-        msf_config = make_msf_config(request)
-        warn_if_msf_step_is_large(msf_config.dt, request.K_max)
-        cache_key = make_msf_cache_key(
-            config=msf_config,
-            K_min=request.K_min,
-            K_max=request.K_max,
-            n_K=request.n_K,
-        )
-        cached = find_cached_msf_result(
-            cache_path=request.msf_cache,
-            key=cache_key,
-        )
-
-        if cached is None:
-            print("No matching MSF cache entry found. Running MSF scan.")
-            zeros = find_msf_zeros(
-                params_obj=msf_config,
-                K_min=request.K_min,
-                K_max=request.K_max,
-                n_K=request.n_K,
-                verbose=True,
-            )
-            append_msf_cache_result(
-                cache_path=request.msf_cache,
-                key=cache_key,
-                zeros=zeros,
-            )
-            print("Saved MSF zeros to cache:", request.msf_cache)
-        else:
-            zeros = cached["zeros"]
-            print("Using cached MSF zeros from:", request.msf_cache)
-
-        print_zero_summary(zeros)
-
-        intervals = coupling_strength_intervals_from_zeros(
-            G=graph,
-            msf_zeros=zeros,
-        )
-    else:
-        print("Skipping MSF scan because manual coupling bounds were provided.")
-        print()
-        intervals = [manual_interval]
-
-    if not intervals:
+    if selected_interval is None:
         print_interval_summary(intervals, selected_index=request.interval_index)
         return 1
-
-    if not (0 <= request.interval_index < len(intervals)):
-        raise ValueError(
-            f"interval_index must be between 0 and {len(intervals) - 1}."
-        )
 
     print_interval_summary(intervals, selected_index=request.interval_index)
     rows = run_basin_scan(
         request=request,
         graph=graph,
-        interval=intervals[request.interval_index],
+        interval=selected_interval,
     )
     print_results_table(rows)
-    if args.csv is not None:
-        write_basin_scan_csv(args.csv, rows, n_trials=request.n_trials)
-        print("Wrote CSV:", args.csv)
+    write_scan_results(args, request, rows)
     return 0
 
 
