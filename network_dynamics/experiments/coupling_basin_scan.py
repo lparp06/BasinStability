@@ -12,6 +12,7 @@ python3 -m network_dynamics.experiments.coupling_basin_scan \
 from __future__ import annotations
 
 import argparse
+import csv
 import math
 import os
 import sys
@@ -28,14 +29,13 @@ from network_dynamics.core.coupling_strengths import (
     interval_coupling_strengths,
 )
 from network_dynamics.core.graphs import make_graph
-from network_dynamics.core.msf import MSFConfig, find_msf_zeros_jax
+from network_dynamics.core.msf import MSFParams, find_msf_zeros
 from network_dynamics.core.msf_cache import (
     append_msf_cache_result,
     find_cached_msf_result,
     make_msf_cache_key,
 )
 from network_dynamics.core.dynamics_parameters import (
-    format_parameter_defaults,
     resolve_dynamics_parameters,
 )
 from network_dynamics.core.oscillators import normalize_dynamics_type
@@ -104,6 +104,11 @@ def parse_args():
     parser.add_argument("--tmax", type=float, default=5000.0)
     parser.add_argument("--dt", type=float, default=0.05)
     parser.add_argument("--n-strengths", type=int, default=10)
+    parser.add_argument(
+        "--csv",
+        default=None,
+        help="Optional path for coupling-strength and basin-stability results.",
+    )
     parser.add_argument(
         "--coupling-low",
         type=float,
@@ -261,7 +266,7 @@ def request_from_args(args):
 
 
 def make_msf_config(request):
-    return MSFConfig(
+    return MSFParams(
         dynamics=request.dynamics,
         a=request.a,
         b=request.b,
@@ -331,6 +336,15 @@ def format_float(value):
     return f"{value:.6g}"
 
 
+def _fmt_seconds(s):
+    s = int(s)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
 def print_run_header(request, graph):
     print("Coupling basin scan")
     print("=" * 44)
@@ -343,32 +357,39 @@ def print_run_header(request, graph):
         if jax_backend != "gpu":
             print("WARNING: backend=gpu requested, but JAX is not using a GPU.")
     print(
-        "Graph:",
-        f"type={request.graph_type}, nodes={graph.number_of_nodes()}, "
-        f"edges={graph.number_of_edges()}, seed={request.graph_seed}",
+        f"Graph: {request.graph_type}  "
+        f"nodes={graph.number_of_nodes()}  edges={graph.number_of_edges()}  "
+        f"seed={request.graph_seed}"
     )
     print(
-        "Basin settings:",
-        f"trials={request.n_trials}, tmax={request.tmax}, dt={request.dt}, "
-        f"strengths={request.n_strengths}, integrator={request.integrator}, "
-        f"backend={request.backend}, workers={request.n_workers}",
+        f"Dynamics: {request.dynamics}  "
+        f"a={request.a}, b={request.b}, c={request.c}"
     )
     print(
-        "Dynamics:",
-        f"type={request.dynamics}, parameters=({request.a}, {request.b}, {request.c})",
+        f"Basin: trials={request.n_trials}  tmax={request.tmax}  dt={request.dt}  "
+        f"strengths={request.n_strengths}  integrator={request.integrator}  "
+        f"backend={request.backend}  workers={request.n_workers}  "
+        f"base_seed={request.base_seed}"
     )
-    print("Registered defaults:", format_parameter_defaults())
     print(
-        "Coupling interval:",
-        (
-            f"manual=[{request.coupling_low}, {request.coupling_high}]"
-            if request.coupling_low is not None or request.coupling_high is not None
-            else (
-                f"from MSF K=[{request.K_min}, {request.K_max}], "
-                f"n_K={request.n_K}"
-            )
-        ),
+        f"Sync: tol={request.sync_tol}  tol_max={request.tol_max}  "
+        f"success={request.success_definition}  window_fraction={request.window_fraction}"
     )
+    print(
+        f"Sampling: [{request.sampling_low}, {request.sampling_high}]  "
+        f"max_abs_threshold={request.max_abs_threshold}"
+    )
+    if request.coupling_low is not None or request.coupling_high is not None:
+        print(f"Coupling interval: manual=[{request.coupling_low}, {request.coupling_high}]")
+    else:
+        print(
+            f"MSF K scan: [{request.K_min}, {request.K_max}]  n_K={request.n_K}  "
+            f"msf_dt={request.msf_dt}  "
+            f"msf_transient={request.msf_transient_time}  "
+            f"msf_measurement={request.msf_measurement_time}"
+        )
+        print(f"MSF cache: {request.msf_cache}")
+    print(f"Interval index: {request.interval_index}")
     print()
 
 
@@ -462,14 +483,13 @@ def run_basin_scan(request, graph, interval):
         elapsed_total = time.perf_counter() - scan_start
         remaining = total_strengths - index
         eta_str = (
-            f"  ETA ~{elapsed_total / (index - 1) * remaining:.0f}s"
+            f"  ETA ~{_fmt_seconds(elapsed_total / (index - 1) * remaining)}"
             if index > 1 and remaining > 0
             else ""
         )
         print(
-            f"[{index}/{total_strengths}] "
-            f"coupling_strength={format_float(strength)}  "
-            f"elapsed {elapsed_total:.0f}s{eta_str}",
+            f"[{index}/{total_strengths}] coupling={format_float(strength)}  "
+            f"elapsed={_fmt_seconds(elapsed_total)}{eta_str}",
             flush=True,
         )
         run_start = time.perf_counter()
@@ -492,13 +512,13 @@ def run_basin_scan(request, graph, interval):
         elapsed_total = time.perf_counter() - scan_start
         remaining = total_strengths - index
         eta_str = (
-            f"  ETA ~{elapsed_total / index * remaining:.0f}s remaining"
+            f"  ETA ~{_fmt_seconds(elapsed_total / index * remaining)}"
             if remaining > 0
             else ""
         )
         print(
             f"  -> basin={format_float(summary.basin_stability)}  "
-            f"this={elapsed:.1f}s  total={elapsed_total:.0f}s{eta_str}",
+            f"this={_fmt_seconds(elapsed)}  total={_fmt_seconds(elapsed_total)}{eta_str}",
             flush=True,
         )
         print()
@@ -548,6 +568,43 @@ def print_results_table(rows):
         )
 
 
+def write_basin_scan_csv(path, rows, n_trials):
+    """Write basin-stability-versus-coupling rows for plotting or analysis."""
+    output_path = os.fspath(path)
+    output_dir = os.path.dirname(output_path)
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+
+    fieldnames = (
+        "K",
+        "coupling_strength",
+        "basin_stability",
+        "n_trials",
+        "successes",
+        "sync_failures",
+        "integration_failures",
+        "sync_time_mean",
+        "seconds",
+    )
+    with open(output_path, "w", newline="", encoding="utf-8") as output_file:
+        writer = csv.DictWriter(output_file, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "K": row["coupling_strength"],
+                    "coupling_strength": row["coupling_strength"],
+                    "basin_stability": row["basin_stability"],
+                    "n_trials": n_trials,
+                    "successes": row["successes"],
+                    "sync_failures": row["sync_failures"],
+                    "integration_failures": row["integration_failures"],
+                    "sync_time_mean": row["sync_time_mean"],
+                    "seconds": row["seconds"],
+                }
+            )
+
+
 def main():
     args = parse_args()
     request = request_from_args(args)
@@ -577,12 +634,11 @@ def main():
 
         if cached is None:
             print("No matching MSF cache entry found. Running MSF scan.")
-            zeros = find_msf_zeros_jax(
-                config=msf_config,
+            zeros = find_msf_zeros(
+                params_obj=msf_config,
                 K_min=request.K_min,
                 K_max=request.K_max,
                 n_K=request.n_K,
-                chunk_size=request.msf_chunk_size,
                 verbose=True,
             )
             append_msf_cache_result(
@@ -622,6 +678,9 @@ def main():
         interval=intervals[request.interval_index],
     )
     print_results_table(rows)
+    if args.csv is not None:
+        write_basin_scan_csv(args.csv, rows, n_trials=request.n_trials)
+        print("Wrote CSV:", args.csv)
     return 0
 
 

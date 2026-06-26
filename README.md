@@ -102,6 +102,28 @@ python -m pip install numpy scipy networkx matplotlib
 For GPU/JAX runs, install the JAX build appropriate for the machine. On NVIDIA clusters this often
 requires a CUDA-compatible JAX installation; on Apple Silicon this project has used `jax-mps`.
 
+## MSF and Basin-Stability Plots
+
+After writing MSF data with `msf_scan --csv outputs/msf_scan.csv`, create a
+Psi(K) plot with:
+
+```bash
+python -m network_dynamics.experiments.plot_stability_curves msf \
+  outputs/msf_scan.csv --output outputs/msf_vs_k.png
+```
+
+Write basin-scan data by adding `--csv outputs/basin_scan.csv` to
+`coupling_basin_scan`, then plot it with:
+
+```bash
+python -m network_dynamics.experiments.plot_stability_curves basin \
+  outputs/basin_scan.csv --output outputs/basin_stability_vs_k.png
+```
+
+The reusable Python functions are `plot_msf_vs_k` and
+`plot_basin_stability_vs_k` in
+`network_dynamics.experiments.plot_stability_curves`.
+
 ## Basic CPU Basin Run
 
 ```python

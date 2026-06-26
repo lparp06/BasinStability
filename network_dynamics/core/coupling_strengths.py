@@ -11,7 +11,7 @@ import numpy as np
 import networkx as nx
 
 from network_dynamics.core.graphs import graph_laplacian
-from network_dynamics.core.msf import MSFConfig, find_msf_zeros_jax
+from network_dynamics.core.msf import MSFParams, find_msf_zeros
 
 
 @dataclass(frozen=True)
@@ -115,26 +115,22 @@ def coupling_strength_intervals_from_zeros(
     return intervals
 
 
-def find_coupling_strength_intervals_jax(
+def find_coupling_strength_intervals(
     G,
-    config: MSFConfig,
+    params: MSFParams,
     K_min: float = 0.0,
     K_max: float = 10.0,
     n_K: int = 101,
     eigenvalue_tolerance: float = 1e-10,
-    chunk_size: int | None = None,
     verbose: bool = False,
 ) -> list[CouplingStrengthInterval]:
-    """
-    Find MSF zeros with JAX and convert them to coupling-strength intervals.
-    """
+    """Find MSF zeros (Numba CPU) and convert them to coupling-strength intervals."""
 
-    zeros = find_msf_zeros_jax(
-        config=config,
+    zeros = find_msf_zeros(
+        params_obj=params,
         K_min=K_min,
         K_max=K_max,
         n_K=n_K,
-        chunk_size=chunk_size,
         verbose=verbose,
     )
 

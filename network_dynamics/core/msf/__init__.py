@@ -1,80 +1,37 @@
-"""Master-stability-function tools.
+"""Master Stability Function (MSF) package — Numba-accelerated CPU implementation.
 
-To add a new oscillator's MSF implementation, start in ``dynamics.py``.
+Primary entry points:
+    run_transient(state0, params, dyn_id, dt, steps) -> np.ndarray
+    scan_msf(K_arr, state0, H_tgt, H_src, params, dyn_id, dt, msteps, qr_steps) -> np.ndarray
+    find_zeros(K, psi, min_sep, max_zeros) -> (zeros, brackets, stable_intervals)
+    warmup() — trigger Numba JIT compilation before timed runs
+
+Oscillator IDs (pass as dyn_id):
+    ROSSLER=0  LORENZ=1  CHEN=2  CHUA=3  HR=4
 """
 
-from network_dynamics.core.msf.analysis import (
-    find_msf_zeros_jax,
-    find_zero_brackets,
-    interpolate_zeros,
-    merge_close_brackets,
-    stable_intervals_from_brackets,
-)
-from network_dynamics.core.msf.config import (
-    MSFConfig,
-    config_to_jax_arrays,
-)
-from network_dynamics.core.msf.coupling import inner_coupling_matrix_jax
 from network_dynamics.core.msf.dynamics import (
-    MSF_DYNAMICS,
-    chen_jacobian_jax,
-    chen_rhs_jax,
-    chua_jacobian_jax,
-    chua_rhs_jax,
-    get_msf_dynamics,
-    lorenz_jacobian_jax,
-    lorenz_rhs_jax,
-    normalize_msf_dynamics,
-    rossler_jacobian_jax,
-    rossler_rhs_jax,
+    ROSSLER, LORENZ, CHEN, CHUA, HR,
+    DYN_IDS, PARAM_LENGTHS, INITIAL_STATES,
+    rhs_jac,
 )
-from network_dynamics.core.msf.integration import (
-    msf_rhs_jax,
-    rk4_step_msf_jax,
-    rk4_step_state_jax,
-    run_transient_jax,
+from network_dynamics.core.msf.compute import (
+    run_transient,
+    scan_msf,
+    warmup,
 )
-from network_dynamics.core.msf.lyapunov import (
-    msf_value_jax,
-    msf_value_from_state_jax,
-    msf_value_from_state_jax_impl,
-    msf_value_jax_impl,
-    qr_update_jax,
-    scan_msf_from_transient_state_jax,
-    scan_msf_jax,
-    scan_msf_jax_impl,
-)
+from network_dynamics.core.msf.zeros import find_zeros
+from network_dynamics.core.msf.params import MSFParams
+from network_dynamics.core.msf.compute import find_msf_zeros
 
 __all__ = [
-    "MSFConfig",
-    "MSF_DYNAMICS",
-    "chen_jacobian_jax",
-    "chen_rhs_jax",
-    "chua_jacobian_jax",
-    "chua_rhs_jax",
-    "config_to_jax_arrays",
-    "find_msf_zeros_jax",
-    "find_zero_brackets",
-    "get_msf_dynamics",
-    "interpolate_zeros",
-    "merge_close_brackets",
-    "inner_coupling_matrix_jax",
-    "lorenz_jacobian_jax",
-    "lorenz_rhs_jax",
-    "msf_rhs_jax",
-    "msf_value_jax",
-    "msf_value_from_state_jax",
-    "msf_value_from_state_jax_impl",
-    "msf_value_jax_impl",
-    "normalize_msf_dynamics",
-    "qr_update_jax",
-    "rk4_step_msf_jax",
-    "rk4_step_state_jax",
-    "rossler_jacobian_jax",
-    "rossler_rhs_jax",
-    "run_transient_jax",
-    "scan_msf_from_transient_state_jax",
-    "scan_msf_jax",
-    "scan_msf_jax_impl",
-    "stable_intervals_from_brackets",
+    "ROSSLER", "LORENZ", "CHEN", "CHUA", "HR",
+    "DYN_IDS", "PARAM_LENGTHS", "INITIAL_STATES",
+    "rhs_jac",
+    "run_transient",
+    "scan_msf",
+    "warmup",
+    "find_zeros",
+    "find_msf_zeros",
+    "MSFParams",
 ]

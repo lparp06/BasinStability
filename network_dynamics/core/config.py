@@ -25,21 +25,21 @@ class BasinConfig:
     H: Optional[np.ndarray] = None
 
     # Integration settings
-    tmax: float = 150.0
-    dt: float = 0.05
-    integrator: str = "LSODA"
+    tmax: float = 5000.0
+    dt: float = 0.001
+    integrator: str = "RK4"
 
     # Basin sampling settings
-    n_trials: int = 25
+    n_trials: int = 1000
     base_seed: int = 42
     sampler: str = "uniform"
     sampling_bounds: Tuple[float, float] = (-5.0, 5.0)
 
     # Synchronization settings
-    sync_tol: float = 1e-2
+    sync_tol: float = 1e-3
     tol_max: float = 1e6
     window_fraction: float = 0.1
-    success_definition: str = "window_success"
+    success_definition: str = "first_crossing"
 
     # Numerical health settings
     max_abs_threshold: float = 1e9
