@@ -23,7 +23,7 @@ from network_dynamics.core.basin_common import sample_initial_conditions_batch
 from network_dynamics.core.config import BasinConfig
 from network_dynamics.core.coupling_strengths import (
     CouplingStrengthInterval,
-    coupling_strength_intervals_from_zeros,
+    coupling_strength_intervals_from_stable,
     interval_coupling_strengths,
 )
 from network_dynamics.core.graphs import make_graph
@@ -40,7 +40,10 @@ from network_dynamics.core.coupling import rank_one_inner_coupling_matrix
 from network_dynamics.core.msf import default_k_range
 from network_dynamics.core.oscillators import normalize_dynamics_type
 from network_dynamics.core.sampling import trial_seeds
-from network_dynamics.cpu.basin import basin_stability_cpu_from_initial_conditions
+from network_dynamics.cpu.basin import (
+    basin_stability_cpu_from_initial_conditions,
+    basin_stability_numba_from_initial_conditions,
+)
 from network_dynamics.gpu.basin_fast import basin_stability_gpu_fast_from_initial_conditions
 
 
@@ -104,7 +107,7 @@ def parse_args():
         help="Oscillator dynamics used for basin integration.",
     )
     parser.add_argument("--tmax", type=float, default=5000.0)
-    parser.add_argument("--dt", type=float, default=0.05)
+    parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--n-strengths", type=int, default=10)
     parser.add_argument(
         "--csv",
@@ -135,11 +138,11 @@ def parse_args():
     )
     parser.add_argument("--interval-index", type=int, default=0)
     parser.add_argument("--progress-interval", type=int, default=5)
-    parser.add_argument("--backend", choices=("cpu", "gpu"), default="gpu")
+    parser.add_argument("--backend", choices=("cpu", "gpu", "numba"), default="gpu")
     parser.add_argument(
         "--n-workers",
         type=int,
-        default=0,
+        default=4,
         help=(
             "CPU worker processes. Use 0 to auto-detect from "
             "SLURM_CPUS_PER_TASK or local CPU count. Ignored for GPU."
@@ -152,7 +155,7 @@ def parse_args():
     parser.add_argument(
         "--success-definition",
         choices=("final_success", "window_success", "first_crossing"),
-        default="window_success",
+        default="first_crossing",
     )
     parser.add_argument("--sampling-low", type=float, default=-5.0)
     parser.add_argument("--sampling-high", type=float, default=5.0)
@@ -187,15 +190,15 @@ def parse_args():
                         help="Minimum K for MSF scan (default: from per-oscillator table).")
     parser.add_argument("--K-max", type=float, default=None,
                         help="Maximum K for MSF scan (default: from per-oscillator table).")
-    parser.add_argument("--n-K", type=int, default=101)
+    parser.add_argument("--n-K", type=int, default=1001)
     parser.add_argument(
         "--msf-cache",
         default="outputs/msf_zero_cache.csv",
         help="CSV cache path for MSF zeros and settings.",
     )
-    parser.add_argument("--msf-transient-time", type=float, default=1000.0)
+    parser.add_argument("--msf-transient-time", type=float, default=100.0)
     parser.add_argument("--msf-measurement-time", type=float, default=3000.0)
-    parser.add_argument("--msf-dt", type=float, default=0.05)
+    parser.add_argument("--msf-dt", type=float, default=0.001)
     parser.add_argument(
         "--msf-chunk-size",
         type=int,
@@ -333,8 +336,8 @@ def make_manual_coupling_interval(request):
 
 
 def make_basin_config(request, graph, coupling_strength):
-    if request.backend == "gpu" and request.integrator != "RK4":
-        raise ValueError("GPU backend requires integrator='RK4'.")
+    if request.backend in ("gpu", "numba") and request.integrator != "RK4":
+        raise ValueError(f"{request.backend} backend requires integrator='RK4'.")
 
     H = rank_one_inner_coupling_matrix(
         target=request.msf_target,
@@ -445,16 +448,22 @@ def warn_if_msf_step_is_large(dt, K_max):
     print()
 
 
-def print_zero_summary(zeros):
+def print_zero_summary(zeros, stable_intervals=None):
     print("MSF zeros")
     print("-" * 44)
 
     if not zeros:
         print("No zeros found.")
+        print()
         return
 
     for index, zero in enumerate(zeros):
         print(f"zero[{index}] = {format_float(zero)}")
+
+    if stable_intervals:
+        print("stable K intervals:")
+        for k_lo, k_hi in stable_intervals:
+            print(f"  [{format_float(k_lo)}, {format_float(k_hi)}]")
     print()
 
 
@@ -501,11 +510,21 @@ def find_or_compute_msf_zeros(request):
     )
 
     if cached is not None:
-        print("Using cached MSF zeros from:", request.msf_cache)
-        return cached["zeros"]
+        zeros = cached["zeros"]
+        stable_intervals = cached["stable_intervals"]
+        # Stale cache entries (written before stable_intervals were computed correctly)
+        # either have empty stable_intervals despite having zeros, or have fewer
+        # stable intervals than expected for an odd number of zeros.
+        expected_min_intervals = (len(zeros) + 1) // 2 if zeros else 0
+        stale = zeros and (not stable_intervals or len(stable_intervals) < expected_min_intervals)
+        if stale:
+            print("Stale cache entry (stable_intervals incomplete) — recomputing MSF scan.")
+        else:
+            print("Using cached MSF zeros from:", request.msf_cache)
+            return zeros, stable_intervals
 
     print("No matching MSF cache entry found. Running MSF scan.")
-    zeros = find_msf_zeros(
+    zeros, stable_intervals = find_msf_zeros(
         params_obj=msf_config,
         K_min=request.K_min,
         K_max=request.K_max,
@@ -516,9 +535,10 @@ def find_or_compute_msf_zeros(request):
         cache_path=request.msf_cache,
         key=cache_key,
         zeros=zeros,
+        stable_intervals=stable_intervals,
     )
     print("Saved MSF zeros to cache:", request.msf_cache)
-    return zeros
+    return zeros, stable_intervals
 
 
 def resolve_coupling_intervals(request, graph):
@@ -529,11 +549,11 @@ def resolve_coupling_intervals(request, graph):
         print()
         return [manual_interval]
 
-    zeros = find_or_compute_msf_zeros(request)
-    print_zero_summary(zeros)
-    return coupling_strength_intervals_from_zeros(
+    zeros, stable_intervals = find_or_compute_msf_zeros(request)
+    print_zero_summary(zeros, stable_intervals)
+    return coupling_strength_intervals_from_stable(
         G=graph,
-        msf_zeros=zeros,
+        stable_intervals=stable_intervals,
     )
 
 
@@ -595,6 +615,12 @@ def run_basin_scan(request, graph, interval):
         run_start = time.perf_counter()
         if request.backend == "gpu":
             summary = basin_stability_gpu_fast_from_initial_conditions(
+                config=config,
+                initial_conditions_batch=initial_conditions,
+                seeds=seeds,
+            )
+        elif request.backend == "numba":
+            summary = basin_stability_numba_from_initial_conditions(
                 config=config,
                 initial_conditions_batch=initial_conditions,
                 seeds=seeds,

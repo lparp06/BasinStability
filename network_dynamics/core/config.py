@@ -108,8 +108,8 @@ class BasinConfig:
                 f"{', '.join(SUCCESS_DEFINITIONS)}."
             )
 
-        if self.backend not in ("serial", "cpu", "gpu"):
-            raise ValueError("backend must be 'serial', 'cpu', or 'gpu'.")
+        if self.backend not in ("serial", "cpu", "gpu", "numba"):
+            raise ValueError("backend must be 'serial', 'cpu', 'gpu', or 'numba'.")
 
         if self.n_workers is not None and self.n_workers <= 0:
             raise ValueError("n_workers must be positive or None.")

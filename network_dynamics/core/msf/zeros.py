@@ -58,4 +58,7 @@ def find_zeros(K, psi, min_sep=1.0, max_zeros=4):
     merged  = merged[:max_zeros]
     stable  = [(merged[i][0], merged[i+1][1])
                for i in range(0, len(merged) - 1, 2)]
+    # Odd number of zeros with psi negative at K_max → open-ended stable tail
+    if len(merged) % 2 == 1 and np.isfinite(psi[-1]) and psi[-1] < 0:
+        stable.append((merged[-1][0], float(K[-1])))
     return zeros, merged, stable

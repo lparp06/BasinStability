@@ -115,6 +115,45 @@ def coupling_strength_intervals_from_zeros(
     return intervals
 
 
+def coupling_strength_intervals_from_stable(
+    G,
+    stable_intervals: list[tuple[float, float]],
+    tolerance: float = 1e-10,
+) -> list[CouplingStrengthInterval]:
+    """
+    Convert stable MSF intervals directly to graph-valid coupling-strength intervals.
+
+    Handles type I (single zero, stable forever) and type III (unbounded tail)
+    as well as type II, by working from pre-computed stable intervals rather than
+    re-pairing zeros. Each stable interval ``(K_lo, K_hi)`` maps to:
+
+        lower = K_lo / lambda_first_nonzero
+        upper = K_hi / lambda_largest
+    """
+    if not stable_intervals:
+        return []
+
+    first_nonzero, largest = laplacian_nonzero_eigenvalue_bounds(G, tolerance)
+
+    intervals = []
+    for k_lo, k_hi in stable_intervals:
+        lower = k_lo / first_nonzero
+        upper = k_hi / largest
+        if lower < upper:
+            intervals.append(
+                CouplingStrengthInterval(
+                    lower=lower,
+                    upper=upper,
+                    msf_zero_low=k_lo,
+                    msf_zero_high=k_hi,
+                    laplacian_first_nonzero=first_nonzero,
+                    laplacian_largest=largest,
+                )
+            )
+
+    return intervals
+
+
 def find_coupling_strength_intervals(
     G,
     params: MSFParams,
@@ -126,7 +165,7 @@ def find_coupling_strength_intervals(
 ) -> list[CouplingStrengthInterval]:
     """Find MSF zeros (Numba CPU) and convert them to coupling-strength intervals."""
 
-    zeros = find_msf_zeros(
+    _, stable_intervals = find_msf_zeros(
         params_obj=params,
         K_min=K_min,
         K_max=K_max,
@@ -134,9 +173,9 @@ def find_coupling_strength_intervals(
         verbose=verbose,
     )
 
-    return coupling_strength_intervals_from_zeros(
+    return coupling_strength_intervals_from_stable(
         G=G,
-        msf_zeros=zeros,
+        stable_intervals=stable_intervals,
         tolerance=eigenvalue_tolerance,
     )
 
@@ -179,3 +218,4 @@ def coupling_strengths_from_intervals(
         )
         for interval in intervals
     ]
+

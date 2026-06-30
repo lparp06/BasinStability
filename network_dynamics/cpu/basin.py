@@ -11,13 +11,15 @@ import sys
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+import numpy as np
+
 from network_dynamics.core.basin_common import (
     classify_solution,
     failed_trial_result,
     sample_initial_condition,
     validate_initial_conditions_batch,
 )
-from network_dynamics.core.results import BasinSummary
+from network_dynamics.core.results import BasinSummary, TrialResult
 from network_dynamics.core.sampling import trial_seeds
 from network_dynamics.cpu.integration import integrate_from_config
 
@@ -282,6 +284,105 @@ def basin_stability_cpu(config):
         seeds=seeds,
         results=results,
     )
+
+
+def basin_stability_numba_from_initial_conditions(
+    config,
+    initial_conditions_batch,
+    seeds=None,
+):
+    """
+    Run basin stability using the Numba parallel backend.
+
+    Parallelizes over initial conditions with prange — no IPC overhead,
+    native-compiled RK4. First call will be slow (~10 s) due to JIT compilation;
+    subsequent calls are fast.
+    """
+    from network_dynamics.numba.basin import (
+        run_basin_numba, build_sparse_coupling, choose_success_code,
+    )
+    from network_dynamics.core.graphs import graph_laplacian
+    from network_dynamics.core.msf.dynamics import DYN_IDS
+
+    config.validate()
+
+    initial_conditions_batch = validate_initial_conditions_batch(
+        config=config,
+        initial_conditions_batch=initial_conditions_batch,
+        dtype=float,
+    )
+
+    if seeds is None:
+        seeds = trial_seeds(base_seed=config.base_seed, n_trials=config.n_trials)
+    else:
+        seeds = list(seeds)
+
+    L = graph_laplacian(config.G)
+    H = np.asarray(config.H, dtype=np.float64)
+    sigma_L_data, sigma_L_indices, sigma_L_indptr, H_c, h_tgt, h_src = build_sparse_coupling(
+        L, config.coupling_strength, H,
+    )
+    ics    = np.ascontiguousarray(initial_conditions_batch, dtype=np.float64)
+    params = np.asarray(config.parameters, dtype=np.float64)
+
+    dyn_id       = DYN_IDS[config.dynamics]
+    n_steps      = config.n_time_points
+    window_start = int((1.0 - config.window_fraction) * n_steps)
+    success_code = choose_success_code(config.success_definition)
+
+    (ever_synced_arr, sync_time_arr, final_dist_arr,
+     window_max_arr, int_failed_arr) = run_basin_numba(
+        initial_conditions=ics,
+        sigma_L_data=sigma_L_data,
+        sigma_L_indices=sigma_L_indices,
+        sigma_L_indptr=sigma_L_indptr,
+        H_matrix=H_c,
+        h_tgt=h_tgt,
+        h_src=h_src,
+        params=params,
+        dyn_id=dyn_id,
+        dt=config.dt,
+        n_steps=n_steps,
+        sync_tol=config.sync_tol,
+        max_abs_threshold=config.max_abs_threshold,
+        window_start=window_start,
+        success_code=success_code,
+    )
+
+    results = []
+    for idx, seed in enumerate(seeds):
+        es = bool(ever_synced_arr[idx])
+        fi = bool(int_failed_arr[idx])
+        fd = float(final_dist_arr[idx])
+        wm = float(window_max_arr[idx])
+        st_raw = float(sync_time_arr[idx])
+        st = None if np.isinf(st_raw) else st_raw
+
+        final_success  = not fi and fd < config.sync_tol
+        window_success = not fi and wm < config.sync_tol
+
+        sdef = config.success_definition
+        if sdef == "final_success":
+            success = final_success
+        elif sdef == "window_success":
+            success = window_success
+        else:  # first_crossing
+            success = es and not fi
+
+        results.append(TrialResult(
+            trial_seed=seed,
+            success=success,
+            final_success=final_success,
+            window_success=window_success,
+            integration_failed=fi,
+            final_distance=fd,
+            window_max_distance=wm,
+            min_distance=None,
+            sync_time=st,
+            error=None,
+        ))
+
+    return BasinSummary.from_results(config=config, seeds=seeds, results=results)
 
 
 def print_basin_summary(summary):

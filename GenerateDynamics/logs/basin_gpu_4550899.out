@@ -1,0 +1,14 @@
+=== Job info ===
+  Job ID     : 4550899
+  Node       : gpu-21-28
+  GPUs       : 1
+  Project    : /mnt/home/lparparo/GenerateDynamics
+  Python     : /mnt/home/lparparo/GenerateDynamics/.venv/bin/python
+  Config     : lorenz_s1t0
+  K range    : [0, 50]  n_K=1001
+  MSF dt     : 0.001  t_tr=100  t_ms=3000
+  Trials     : 1000  strengths=10
+  Start      : Fri Jun 26 17:26:38 EDT 2026
+
+
+=== Done : Fri Jun 26 17:26:46 EDT 2026 ===

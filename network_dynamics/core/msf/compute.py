@@ -338,8 +338,8 @@ def find_msf_zeros(params_obj, K_min, K_max, n_K,
     if verbose:
         print(" done")
 
-    zeros, _, _ = _find_zeros(K_arr, psi, min_sep, max_zeros)
-    return zeros
+    zeros, _, stable_intervals = _find_zeros(K_arr, psi, min_sep, max_zeros)
+    return zeros, stable_intervals
 
 
 # ─── warmup ──────────────────────────────────────────────────────────────────

@@ -1,0 +1,77 @@
+=== network_scan GPU job ===
+  Job ID        : 4550995
+  Node          : gpu-21-28
+  GPUs          : 0
+  CPUs          : 8
+  Project       : /mnt/home/lparparo/GenerateDynamics
+  Python        : /mnt/home/lparparo/GenerateDynamics/.venv/bin/python
+  Dynamics      : lorenz  source=1  target=0
+  Graph         : barabasi-albert  n=100  seeds=42–51
+  Basin         : trials=1000  strengths=10  tmax=500.0  dt=0.05
+  Success def   : first_crossing
+  MSF cache     : outputs/msf_zero_cache.csv
+  Output dir    : outputs/network_scan
+  Start         : Mon Jun 29 17:42:29 EDT 2026
+
+Using cached MSF zeros from outputs/msf_zero_cache.csv
+Stable K intervals: [[4.1000000000000005, 22.450000000000003]]
+
+Network scan
+  graph=barabasi-albert  n=100  seeds=42–51
+  dynamics=lorenz  source=1  target=0
+  trials=1000  strengths=10  backend=gpu
+  output: outputs/network_scan/barabasi-albert_n100_p0.15
+
+======================================================
+Seed 42  (1/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 42 — graph may be disconnected. Skipping.
+======================================================
+Seed 43  (2/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 43 — graph may be disconnected. Skipping.
+======================================================
+Seed 44  (3/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 44 — graph may be disconnected. Skipping.
+======================================================
+Seed 45  (4/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 45 — graph may be disconnected. Skipping.
+======================================================
+Seed 46  (5/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 46 — graph may be disconnected. Skipping.
+======================================================
+Seed 47  (6/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 47 — graph may be disconnected. Skipping.
+======================================================
+Seed 48  (7/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 48 — graph may be disconnected. Skipping.
+======================================================
+Seed 49  (8/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 49 — graph may be disconnected. Skipping.
+======================================================
+Seed 50  (9/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 50 — graph may be disconnected. Skipping.
+======================================================
+Seed 51  (10/10)
+======================================================
+  Graph: 100 nodes, 736 edges
+  No valid coupling interval for seed 51 — graph may be disconnected. Skipping.
+Done.
+
+=== Done : Mon Jun 29 17:42:41 EDT 2026 ===

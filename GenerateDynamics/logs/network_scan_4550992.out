@@ -1,0 +1,327 @@
+=== network_scan GPU job ===
+  Job ID        : 4550992
+  Node          : gpu-21-28
+  GPUs          : 0
+  CPUs          : 8
+  Project       : /mnt/home/lparparo/GenerateDynamics
+  Python        : /mnt/home/lparparo/GenerateDynamics/.venv/bin/python
+  Dynamics      : lorenz  source=1  target=0
+  Graph         : erdos_renyi  n=100  seeds=42–51
+  Basin         : trials=1000  strengths=10  tmax=500.0  dt=0.05
+  Success def   : first_crossing
+  MSF cache     : outputs/msf_zero_cache.csv
+  Output dir    : outputs/network_scan
+  Start         : Mon Jun 29 17:07:03 EDT 2026
+
+Using cached MSF zeros from outputs/msf_zero_cache.csv
+Stable K intervals: [[4.1000000000000005, 22.450000000000003]]
+
+Network scan
+  graph=erdos_renyi  n=100  seeds=42–51
+  dynamics=lorenz  source=1  target=0
+  trials=1000  strengths=10  backend=gpu
+  output: outputs/network_scan/erdos_renyi_n100_p0.15
+
+======================================================
+Seed 42  (1/10)
+======================================================
+  Graph: 100 nodes, 730 edges
+  sigma interval [0.6656, 0.8261]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [6.1598, 27.1750]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_42/msf_eigenvalues.png
+  [1/10] sigma=0.665606  elapsed=0s
+  -> basin=0.2240  (16s)
+  [2/10] sigma=0.683441  elapsed=16s  ETA ~2m15s
+  -> basin=0.5850  (6s)
+  [3/10] sigma=0.701277  elapsed=23s  ETA ~1m21s
+  -> basin=0.9160  (6s)
+  [4/10] sigma=0.719113  elapsed=29s  ETA ~59s
+  -> basin=0.9880  (6s)
+  [5/10] sigma=0.736948  elapsed=36s  ETA ~45s
+  -> basin=1.0000  (5s)
+  [6/10] sigma=0.754784  elapsed=41s  ETA ~33s
+  -> basin=1.0000  (4s)
+  [7/10] sigma=0.772619  elapsed=46s  ETA ~23s
+  -> basin=1.0000  (3s)
+  [8/10] sigma=0.790455  elapsed=49s  ETA ~14s
+  -> basin=0.9970  (6s)
+  [9/10] sigma=0.80829  elapsed=56s  ETA ~7s
+  -> basin=0.9580  (6s)
+  [10/10] sigma=0.826126  elapsed=1m02s
+  -> basin=0.6890  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_42/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 43  (2/10)
+======================================================
+  Graph: 100 nodes, 714 edges
+  sigma interval [0.7796, 0.7977]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [5.2593, 28.1421]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_43/msf_eigenvalues.png
+  [1/10] sigma=0.779567  elapsed=0s
+  -> basin=0.0080  (6s)
+  [2/10] sigma=0.781586  elapsed=6s  ETA ~51s
+  -> basin=0.0130  (6s)
+  [3/10] sigma=0.783605  elapsed=12s  ETA ~45s
+  -> basin=0.0090  (6s)
+  [4/10] sigma=0.785624  elapsed=19s  ETA ~38s
+  -> basin=0.0070  (6s)
+  [5/10] sigma=0.787643  elapsed=25s  ETA ~32s
+  -> basin=0.0100  (6s)
+  [6/10] sigma=0.789662  elapsed=32s  ETA ~25s
+  -> basin=0.0050  (6s)
+  [7/10] sigma=0.791681  elapsed=38s  ETA ~19s
+  -> basin=0.0010  (6s)
+  [8/10] sigma=0.7937  elapsed=45s  ETA ~12s
+  -> basin=0.0050  (6s)
+  [9/10] sigma=0.795719  elapsed=51s  ETA ~6s
+  -> basin=0.0040  (6s)
+  [10/10] sigma=0.797738  elapsed=58s
+  -> basin=0.0040  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_43/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 44  (3/10)
+======================================================
+  Graph: 100 nodes, 778 edges
+  sigma interval [0.6451, 0.8155]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [6.3555, 27.5276]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_44/msf_eigenvalues.png
+  [1/10] sigma=0.645111  elapsed=0s
+  -> basin=0.3300  (6s)
+  [2/10] sigma=0.664048  elapsed=6s  ETA ~51s
+  -> basin=0.7330  (6s)
+  [3/10] sigma=0.682986  elapsed=12s  ETA ~45s
+  -> basin=0.9660  (6s)
+  [4/10] sigma=0.701923  elapsed=19s  ETA ~38s
+  -> basin=0.9990  (6s)
+  [5/10] sigma=0.72086  elapsed=25s  ETA ~32s
+  -> basin=1.0000  (5s)
+  [6/10] sigma=0.739797  elapsed=30s  ETA ~24s
+  -> basin=1.0000  (3s)
+  [7/10] sigma=0.758734  elapsed=34s  ETA ~17s
+  -> basin=1.0000  (3s)
+  [8/10] sigma=0.777672  elapsed=37s  ETA ~10s
+  -> basin=1.0000  (3s)
+  [9/10] sigma=0.796609  elapsed=41s  ETA ~5s
+  -> basin=0.9900  (6s)
+  [10/10] sigma=0.815546  elapsed=47s
+  -> basin=0.7450  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_44/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 45  (4/10)
+======================================================
+  Graph: 100 nodes, 732 edges
+  sigma interval [0.7566, 0.7969]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [5.4188, 28.1717]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_45/msf_eigenvalues.png
+  [1/10] sigma=0.756625  elapsed=0s
+  -> basin=0.1770  (6s)
+  [2/10] sigma=0.7611  elapsed=6s  ETA ~51s
+  -> basin=0.2090  (6s)
+  [3/10] sigma=0.765575  elapsed=12s  ETA ~45s
+  -> basin=0.2060  (6s)
+  [4/10] sigma=0.77005  elapsed=19s  ETA ~38s
+  -> basin=0.2320  (6s)
+  [5/10] sigma=0.774525  elapsed=25s  ETA ~32s
+  -> basin=0.2200  (6s)
+  [6/10] sigma=0.779  elapsed=32s  ETA ~25s
+  -> basin=0.2080  (6s)
+  [7/10] sigma=0.783475  elapsed=38s  ETA ~19s
+  -> basin=0.2040  (6s)
+  [8/10] sigma=0.78795  elapsed=45s  ETA ~12s
+  -> basin=0.1840  (6s)
+  [9/10] sigma=0.792424  elapsed=51s  ETA ~6s
+  -> basin=0.1560  (6s)
+  [10/10] sigma=0.796899  elapsed=58s
+  -> basin=0.1150  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_45/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 46  (5/10)
+======================================================
+  Graph: 100 nodes, 781 edges
+  sigma interval [0.5615, 0.8323]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [7.3012, 26.9721]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_46/msf_eigenvalues.png
+  [1/10] sigma=0.56155  elapsed=0s
+  -> basin=0.3440  (6s)
+  [2/10] sigma=0.591638  elapsed=6s  ETA ~51s
+  -> basin=0.9370  (6s)
+  [3/10] sigma=0.621726  elapsed=12s  ETA ~45s
+  -> basin=1.0000  (4s)
+  [4/10] sigma=0.651814  elapsed=17s  ETA ~34s
+  -> basin=1.0000  (2s)
+  [5/10] sigma=0.681902  elapsed=20s  ETA ~25s
+  -> basin=1.0000  (1s)
+  [6/10] sigma=0.71199  elapsed=21s  ETA ~17s
+  -> basin=1.0000  (1s)
+  [7/10] sigma=0.742078  elapsed=23s  ETA ~11s
+  -> basin=1.0000  (1s)
+  [8/10] sigma=0.772166  elapsed=24s  ETA ~7s
+  -> basin=1.0000  (2s)
+  [9/10] sigma=0.802254  elapsed=26s  ETA ~3s
+  -> basin=1.0000  (4s)
+  [10/10] sigma=0.832342  elapsed=31s
+  -> basin=0.7380  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_46/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 47  (6/10)
+======================================================
+  Graph: 100 nodes, 716 edges
+  sigma interval [0.6256, 0.8763]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [6.5541, 25.6198]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_47/msf_eigenvalues.png
+  [1/10] sigma=0.625564  elapsed=0s
+  -> basin=0.3220  (6s)
+  [2/10] sigma=0.653421  elapsed=6s  ETA ~51s
+  -> basin=0.8730  (6s)
+  [3/10] sigma=0.681278  elapsed=12s  ETA ~45s
+  -> basin=1.0000  (5s)
+  [4/10] sigma=0.709135  elapsed=18s  ETA ~37s
+  -> basin=1.0000  (3s)
+  [5/10] sigma=0.736992  elapsed=22s  ETA ~28s
+  -> basin=1.0000  (1s)
+  [6/10] sigma=0.764849  elapsed=24s  ETA ~19s
+  -> basin=1.0000  (1s)
+  [7/10] sigma=0.792706  elapsed=26s  ETA ~13s
+  -> basin=1.0000  (1s)
+  [8/10] sigma=0.820563  elapsed=27s  ETA ~7s
+  -> basin=1.0000  (1s)
+  [9/10] sigma=0.84842  elapsed=29s  ETA ~3s
+  -> basin=1.0000  (5s)
+  [10/10] sigma=0.876277  elapsed=34s
+  -> basin=0.8540  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_47/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 48  (7/10)
+======================================================
+  Graph: 100 nodes, 705 edges
+  sigma interval [0.7751, 0.9511]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [5.2898, 23.6047]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_48/msf_eigenvalues.png
+  [1/10] sigma=0.775071  elapsed=0s
+  -> basin=0.3240  (6s)
+  [2/10] sigma=0.794628  elapsed=6s  ETA ~51s
+  -> basin=0.6730  (6s)
+  [3/10] sigma=0.814185  elapsed=12s  ETA ~45s
+  -> basin=0.9270  (6s)
+  [4/10] sigma=0.833742  elapsed=19s  ETA ~38s
+  -> basin=0.9960  (6s)
+  [5/10] sigma=0.853299  elapsed=25s  ETA ~32s
+  -> basin=1.0000  (5s)
+  [6/10] sigma=0.872856  elapsed=30s  ETA ~24s
+  -> basin=1.0000  (4s)
+  [7/10] sigma=0.892413  elapsed=35s  ETA ~17s
+  -> basin=0.9950  (6s)
+  [8/10] sigma=0.91197  elapsed=42s  ETA ~12s
+  -> basin=0.9840  (6s)
+  [9/10] sigma=0.931527  elapsed=48s  ETA ~6s
+  -> basin=0.9440  (6s)
+  [10/10] sigma=0.951084  elapsed=54s
+  -> basin=0.7620  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_48/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 49  (8/10)
+======================================================
+  Graph: 100 nodes, 767 edges
+  sigma interval [0.6441, 0.7985]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [6.3652, 28.1136]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_49/msf_eigenvalues.png
+  [1/10] sigma=0.644127  elapsed=0s
+  -> basin=0.2740  (6s)
+  [2/10] sigma=0.661285  elapsed=6s  ETA ~51s
+  -> basin=0.6210  (6s)
+  [3/10] sigma=0.678442  elapsed=12s  ETA ~45s
+  -> basin=0.9000  (6s)
+  [4/10] sigma=0.6956  elapsed=19s  ETA ~38s
+  -> basin=0.9960  (6s)
+  [5/10] sigma=0.712758  elapsed=25s  ETA ~32s
+  -> basin=1.0000  (6s)
+  [6/10] sigma=0.729916  elapsed=32s  ETA ~25s
+  -> basin=1.0000  (4s)
+  [7/10] sigma=0.747073  elapsed=36s  ETA ~18s
+  -> basin=1.0000  (5s)
+  [8/10] sigma=0.764231  elapsed=41s  ETA ~11s
+  -> basin=0.9950  (6s)
+  [9/10] sigma=0.781389  elapsed=47s  ETA ~5s
+  -> basin=0.9400  (6s)
+  [10/10] sigma=0.798547  elapsed=54s
+  -> basin=0.6910  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_49/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 50  (9/10)
+======================================================
+  Graph: 100 nodes, 734 edges
+  sigma interval [0.6888, 0.8327]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [5.9520, 26.9594]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_50/msf_eigenvalues.png
+  [1/10] sigma=0.688843  elapsed=0s
+  -> basin=0.2360  (6s)
+  [2/10] sigma=0.704831  elapsed=6s  ETA ~51s
+  -> basin=0.5430  (6s)
+  [3/10] sigma=0.720819  elapsed=12s  ETA ~45s
+  -> basin=0.8320  (6s)
+  [4/10] sigma=0.736807  elapsed=19s  ETA ~38s
+  -> basin=0.9840  (6s)
+  [5/10] sigma=0.752795  elapsed=25s  ETA ~32s
+  -> basin=0.9970  (6s)
+  [6/10] sigma=0.768783  elapsed=32s  ETA ~25s
+  -> basin=1.0000  (5s)
+  [7/10] sigma=0.784771  elapsed=37s  ETA ~18s
+  -> basin=1.0000  (3s)
+  [8/10] sigma=0.800759  elapsed=41s  ETA ~11s
+  -> basin=0.9980  (6s)
+  [9/10] sigma=0.816747  elapsed=47s  ETA ~5s
+  -> basin=0.8450  (6s)
+  [10/10] sigma=0.832734  elapsed=54s
+  -> basin=0.3560  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_50/basin_lorenz_s1t0.csv
+
+======================================================
+Seed 51  (10/10)
+======================================================
+  Graph: 100 nodes, 719 edges
+  sigma interval [0.7715, 0.8977]
+Non-zero Laplacian eigenvalues: 99
+Eigenvalue range: [5.3146, 25.0093]
+Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_51/msf_eigenvalues.png
+  [1/10] sigma=0.771457  elapsed=0s
+  -> basin=0.3190  (6s)
+  [2/10] sigma=0.78548  elapsed=6s  ETA ~51s
+  -> basin=0.5540  (6s)
+  [3/10] sigma=0.799503  elapsed=12s  ETA ~45s
+  -> basin=0.7860  (6s)
+  [4/10] sigma=0.813526  elapsed=19s  ETA ~38s
+  -> basin=0.9340  (6s)
+  [5/10] sigma=0.827549  elapsed=25s  ETA ~32s
+  -> basin=0.9830  (6s)
+  [6/10] sigma=0.841572  elapsed=32s  ETA ~25s
+  -> basin=0.9970  (6s)
+  [7/10] sigma=0.855595  elapsed=38s  ETA ~19s
+  -> basin=1.0000  (5s)
+  [8/10] sigma=0.869618  elapsed=44s  ETA ~12s
+  -> basin=0.9920  (6s)
+  [9/10] sigma=0.883642  elapsed=51s  ETA ~6s
+  -> basin=0.9610  (6s)
+  [10/10] sigma=0.897665  elapsed=57s
+  -> basin=0.6540  (6s)
+  Wrote: outputs/network_scan/erdos_renyi_n100_p0.15/seed_51/basin_lorenz_s1t0.csv
+
+Done.
+
+=== Done : Mon Jun 29 17:17:02 EDT 2026 ===

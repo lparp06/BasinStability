@@ -9,6 +9,8 @@ import networkx as nx
 GRAPH_TYPES = (
     "path_graph",
     "erdos_renyi",
+    "barabasi_albert",
+    "watts_strogatz",
 )
 
 
@@ -24,6 +26,12 @@ def normalize_graph_type(graph_type):
         "er": "erdos_renyi",
         "erdos-renyi": "erdos_renyi",
         "erdos_renyi": "erdos_renyi",
+        "ba": "barabasi_albert",
+        "barabasi_albert": "barabasi_albert",
+        "barabasi-albert": "barabasi_albert",
+        "ws": "watts_strogatz",
+        "watts_strogatz": "watts_strogatz",
+        "watts-strogatz": "watts_strogatz",
     }
 
     normalized = aliases.get(graph_type.lower())
@@ -41,7 +49,9 @@ def make_graph(
     graph_type,
     n_nodes=5,
     seed=42,
-    edge_probability=0.15,
+    edge_probability=0.16,
+    ba_m=8,
+    ws_k=6,
 ):
     """
     Build a NetworkX graph from a compact graph-type name and parameters.
@@ -54,6 +64,12 @@ def make_graph(
 
     if graph_type == "erdos_renyi":
         return nx.erdos_renyi_graph(n=n_nodes, p=edge_probability, seed=seed)
+
+    if graph_type == "barabasi_albert":
+        return nx.barabasi_albert_graph(n=n_nodes, m=ba_m, seed=seed)
+
+    if graph_type == "watts_strogatz":
+        return nx.watts_strogatz_graph(n=n_nodes, k=ws_k, p=edge_probability, seed=seed)
 
     raise ValueError(f"Unsupported graph_type: {graph_type}")
 
