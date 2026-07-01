@@ -1,0 +1,82 @@
+ python -m network_dynamics.experiments.network_scan \
+    --graph-type watts_strogatz --ws-k 16 --edge-probability 0.2 --n-seeds 10 --backend cpu --dynamics lorenz --source 0 --target 0
+Using cached MSF zeros from outputs/msf_zero_cache.csv
+Stable K intervals: [[7.26, 30.0]]
+
+Network scan
+  graph=watts_strogatz  n=100  seeds=42–51
+  dynamics=lorenz  source=0  target=0
+  trials=1000  strengths=10  backend=cpu
+  output: outputs/network_scan/watts_strogatz_n100_k16_p0.2
+
+======================================================
+Seed 42  (1/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.54553, lambda_N=23.562, lambda_N/lambda_2=6.64555
+  interval 0: K=[7.26, 30] -> sigma=[2.04765, 1.27324] (invalid)
+  No valid coupling interval for seed 42 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 43  (2/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.70266, lambda_N=23.0924, lambda_N/lambda_2=6.23671
+  interval 0: K=[7.26, 30] -> sigma=[1.96075, 1.29913] (invalid)
+  No valid coupling interval for seed 43 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 44  (3/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.8998, lambda_N=23.6322, lambda_N/lambda_2=6.05985
+  interval 0: K=[7.26, 30] -> sigma=[1.86163, 1.26945] (invalid)
+  No valid coupling interval for seed 44 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 45  (4/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.264, lambda_N=23.4195, lambda_N/lambda_2=7.17509
+  interval 0: K=[7.26, 30] -> sigma=[2.22427, 1.28099] (invalid)
+  No valid coupling interval for seed 45 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 46  (5/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.5435, lambda_N=23.1851, lambda_N/lambda_2=6.543
+  interval 0: K=[7.26, 30] -> sigma=[2.04882, 1.29393] (invalid)
+  No valid coupling interval for seed 46 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 47  (6/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.8246, lambda_N=23.1757, lambda_N/lambda_2=6.05964
+  interval 0: K=[7.26, 30] -> sigma=[1.89824, 1.29446] (invalid)
+  No valid coupling interval for seed 47 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 48  (7/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.47554, lambda_N=23.7332, lambda_N/lambda_2=6.82863
+  interval 0: K=[7.26, 30] -> sigma=[2.08888, 1.26405] (invalid)
+  No valid coupling interval for seed 48 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 49  (8/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.5029, lambda_N=23.1724, lambda_N/lambda_2=6.6152
+  interval 0: K=[7.26, 30] -> sigma=[2.07257, 1.29464] (invalid)
+  No valid coupling interval for seed 49 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 50  (9/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.43983, lambda_N=23.5154, lambda_N/lambda_2=6.83621
+  interval 0: K=[7.26, 30] -> sigma=[2.11057, 1.27576] (invalid)
+  No valid coupling interval for seed 50 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+======================================================
+Seed 51  (10/10)
+======================================================
+  Graph: 100 nodes, 800 edges
+  Laplacian eigenvalues: lambda_2=3.4526, lambda_N=23.4681, lambda_N/lambda_2=6.79724
+  interval 0: K=[7.26, 30] -> sigma=[2.10277, 1.27833] (invalid)
+  No valid coupling interval for seed 51 — graph spectrum does not fit inside the stable MSF interval. Skipping.
+Done.

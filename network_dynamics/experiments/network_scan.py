@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import logging
 import os
 import sys
 import time
@@ -38,9 +39,10 @@ from network_dynamics.core.coupling import rank_one_inner_coupling_matrix
 from network_dynamics.core.coupling_strengths import (
     coupling_strength_intervals_from_stable,
     interval_coupling_strengths,
+    laplacian_nonzero_eigenvalue_bounds,
 )
 from network_dynamics.core.dynamics_parameters import resolve_dynamics_parameters
-from network_dynamics.core.graphs import make_graph
+from network_dynamics.core.graphs import graph_laplacian, make_graph
 from network_dynamics.core.msf import MSFParams, find_msf_zeros, default_k_range
 from network_dynamics.core.msf_cache import (
     append_msf_cache_result,
@@ -55,8 +57,31 @@ from network_dynamics.cpu.basin import (
 )
 from network_dynamics.gpu.basin_fast import basin_stability_gpu_fast_from_initial_conditions
 from network_dynamics.experiments.plot_msf_with_eigenvalues import make_eigenvalue_plot
+from network_dynamics.experiments.plot_stability_curves import plot_basin_stability_vs_k
 
 _MSF_CACHE_DEFAULT = "outputs/msf_zero_cache.csv"
+
+logger = logging.getLogger("network_scan")
+
+
+class _FlushFileHandler(logging.FileHandler):
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+
+def _setup_logging(log_path: Path) -> None:
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    fmt = logging.Formatter("%(message)s")
+
+    file_handler = _FlushFileHandler(log_path, mode="w", encoding="utf-8")
+    file_handler.setFormatter(fmt)
+    logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(sys.stdout)
+    stream_handler.setFormatter(fmt)
+    logger.addHandler(stream_handler)
 
 
 # ---------------------------------------------------------------------------
@@ -137,6 +162,11 @@ def _graph_subdir_name(graph_type, n_nodes, edge_prob, ba_m, ws_k):
     return f"{graph_type}_n{n_nodes}_p{edge_prob}"
 
 
+def _run_subdir_name(graph_type, n_nodes, edge_prob, ba_m, ws_k, dynamics, source, target):
+    graph_part = _graph_subdir_name(graph_type, n_nodes, edge_prob, ba_m, ws_k)
+    return f"{graph_part}__{dynamics}_s{source}t{target}"
+
+
 def _auto_n_workers(args):
     if args.backend == "gpu":
         return None
@@ -155,6 +185,46 @@ def _fmt_seconds(s):
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
+def _log_seed_spectral_intervals(G, stable_intervals):
+    """
+    Log Laplacian spectral bounds and candidate sigma intervals for a seed.
+    """
+    try:
+        lambda_2, lambda_n = laplacian_nonzero_eigenvalue_bounds(G)
+    except ValueError as exc:
+        logger.info(f"  Laplacian eigenvalues: unavailable ({exc})")
+        return
+
+    eigenratio = lambda_n / lambda_2
+    logger.info(
+        "  Laplacian eigenvalues: "
+        f"lambda_2={lambda_2:.6g}, lambda_N={lambda_n:.6g}, "
+        f"lambda_N/lambda_2={eigenratio:.6g}"
+    )
+
+    for interval_index, (k_lo, k_hi) in enumerate(stable_intervals):
+        sigma_lo = k_lo / lambda_2
+        sigma_hi = k_hi / lambda_n
+        status = "valid" if sigma_lo < sigma_hi else "invalid"
+        logger.info(
+            f"  interval {interval_index}: "
+            f"K=[{k_lo:.6g}, {k_hi:.6g}] -> "
+            f"sigma=[{sigma_lo:.6g}, {sigma_hi:.6g}] ({status})"
+        )
+
+
+def _laplacian_eigenvalues(G):
+    laplacian = np.asarray(graph_laplacian(G), dtype=float)
+    return np.sort(np.linalg.eigvalsh(laplacian))
+
+
+def _write_eigenvalues_file(path, eigenvalues):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        for value in eigenvalues:
+            f.write(f"{value:.10g}\n")
+
+
 # ---------------------------------------------------------------------------
 # MSF zeros (graph-independent — compute once, reuse for all seeds)
 # ---------------------------------------------------------------------------
@@ -169,18 +239,18 @@ def _get_msf_zeros(msf_config, K_min, K_max, n_K, cache_path):
         expected = (len(zeros) + 1) // 2 if zeros else 0
         stale = zeros and (not stable_intervals or len(stable_intervals) < expected)
         if not stale:
-            print(f"Using cached MSF zeros from {cache_path}")
+            logger.info(f"Using cached MSF zeros from {cache_path}")
             return zeros, stable_intervals
-        print("Stale cache entry (stable_intervals incomplete) — recomputing MSF scan.")
+        logger.info("Stale cache entry (stable_intervals incomplete) — recomputing MSF scan.")
 
-    print("Running MSF scan...")
+    logger.info("Running MSF scan...")
     zeros, stable_intervals = find_msf_zeros(
         params_obj=msf_config, K_min=K_min, K_max=K_max, n_K=n_K, verbose=True,
     )
     append_msf_cache_result(
         cache_path=cache_path, key=key, zeros=zeros, stable_intervals=stable_intervals,
     )
-    print(f"Saved MSF zeros to {cache_path}")
+    logger.info(f"Saved MSF zeros to {cache_path}")
     return zeros, stable_intervals
 
 
@@ -243,9 +313,8 @@ def _run_basin_scan(G, args, dynamics, params, source, target, interval, n_worke
             f"  ETA ~{_fmt_seconds(elapsed / (i - 1) * (n - i))}"
             if i > 1 and i < n else ""
         )
-        print(
+        logger.info(
             f"  [{i}/{n}] sigma={strength:.6g}  elapsed={_fmt_seconds(elapsed)}{eta}",
-            flush=True,
         )
 
         t0 = time.perf_counter()
@@ -272,9 +341,8 @@ def _run_basin_scan(G, args, dynamics, params, source, target, interval, n_worke
             )
 
         elapsed_this = time.perf_counter() - t0
-        print(
+        logger.info(
             f"  -> basin={summary.basin_stability:.4f}  ({_fmt_seconds(elapsed_this)})",
-            flush=True,
         )
 
         rows.append({
@@ -330,6 +398,20 @@ def main():
     source, target = args.source, args.target
     n_workers = _auto_n_workers(args)
 
+    # Output root
+    run_subdir = _run_subdir_name(
+        args.graph_type, args.n_nodes, args.edge_probability, args.ba_m, args.ws_k,
+        dynamics, source, target,
+    )
+    output_root = Path(args.output_dir) / run_subdir
+    output_root.mkdir(parents=True, exist_ok=True)
+    _setup_logging(output_root / "output.txt")
+
+    logger.info("Run configuration:")
+    for key, value in sorted(vars(args).items()):
+        logger.info(f"  {key} = {value}")
+    logger.info("")
+
     # MSF zeros (same for all graph seeds — depends only on dynamics/coupling scheme)
     msf_config = MSFParams(
         dynamics=dynamics,
@@ -345,39 +427,33 @@ def main():
     )
 
     if not stable_intervals:
-        print(
+        logger.error(
             f"ERROR: No stable MSF intervals found for "
             f"{dynamics} source={source} target={target}. "
             "Try a different coupling scheme or increase K_max."
         )
         return 1
 
-    print(f"Stable K intervals: {stable_intervals}")
+    logger.info(f"Stable K intervals: {stable_intervals}")
 
     # MSF CSV for eigenvalue plots (optional — skip plot if missing)
     msf_csv = Path(f"outputs/{dynamics}/csv/msf_{dynamics}_s{source}t{target}.csv")
     if not msf_csv.exists():
-        print(f"WARNING: MSF CSV not found at {msf_csv}; eigenvalue plots will be skipped.")
+        logger.warning(f"WARNING: MSF CSV not found at {msf_csv}; eigenvalue plots will be skipped.")
         msf_csv = None
 
-    # Output root
-    graph_subdir = _graph_subdir_name(
-        args.graph_type, args.n_nodes, args.edge_probability, args.ba_m, args.ws_k,
-    )
-    output_root = Path(args.output_dir) / graph_subdir
-
-    print(f"\nNetwork scan")
-    print(f"  graph={args.graph_type}  n={args.n_nodes}  seeds={args.seed_start}–"
+    logger.info(f"\nNetwork scan")
+    logger.info(f"  graph={args.graph_type}  n={args.n_nodes}  seeds={args.seed_start}–"
           f"{args.seed_start + args.n_seeds - 1}")
-    print(f"  dynamics={dynamics}  source={source}  target={target}")
-    print(f"  trials={args.n_trials}  strengths={args.n_strengths}  backend={args.backend}")
-    print(f"  output: {output_root}\n")
+    logger.info(f"  dynamics={dynamics}  source={source}  target={target}")
+    logger.info(f"  trials={args.n_trials}  strengths={args.n_strengths}  backend={args.backend}")
+    logger.info(f"  output: {output_root}\n")
 
     for seed in range(args.seed_start, args.seed_start + args.n_seeds):
         seed_num = seed - args.seed_start + 1
-        print(f"{'=' * 54}")
-        print(f"Seed {seed}  ({seed_num}/{args.n_seeds})")
-        print(f"{'=' * 54}")
+        logger.info(f"{'=' * 54}")
+        logger.info(f"Seed {seed}  ({seed_num}/{args.n_seeds})")
+        logger.info(f"{'=' * 54}")
 
         G = make_graph(
             args.graph_type,
@@ -387,26 +463,36 @@ def main():
             ba_m=args.ba_m,
             ws_k=args.ws_k,
         )
-        print(f"  Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        logger.info(f"  Graph: {G.number_of_nodes()} nodes, {G.number_of_edges()} edges")
+        _log_seed_spectral_intervals(G, stable_intervals)
 
         sigma_intervals = coupling_strength_intervals_from_stable(G, stable_intervals)
 
         if not sigma_intervals:
-            print(f"  No valid coupling interval for seed {seed} — graph may be disconnected. Skipping.")
+            logger.info(
+                f"  No valid coupling interval for seed {seed} — "
+                "graph spectrum does not fit inside the stable MSF interval. Skipping."
+            )
             continue
 
         if args.interval_index >= len(sigma_intervals):
-            print(
+            logger.info(
                 f"  interval_index={args.interval_index} out of range "
                 f"(only {len(sigma_intervals)} interval(s)). Skipping."
             )
             continue
 
         interval = sigma_intervals[args.interval_index]
-        print(f"  sigma interval [{interval.lower:.4f}, {interval.upper:.4f}]")
+        logger.info(f"  sigma interval [{interval.lower:.4f}, {interval.upper:.4f}]")
 
         seed_dir = output_root / f"seed_{seed:02d}"
         seed_dir.mkdir(parents=True, exist_ok=True)
+        plots_dir = seed_dir / "plots"
+        csv_dir = seed_dir / "csv"
+
+        # Laplacian eigenvalues (drop the trivial first eigenvalue)
+        eigenvalues = _laplacian_eigenvalues(G)
+        _write_eigenvalues_file(seed_dir / "eigenvalues.txt", eigenvalues[1:])
 
         # Eigenvalue overlay plot
         if msf_csv is not None:
@@ -417,11 +503,11 @@ def main():
                     G=G,
                     msf_csv_path=msf_csv,
                     coupling_strengths=plot_sigmas,
-                    output_path=seed_dir / "msf_eigenvalues.png",
+                    output_path=plots_dir / "msf_eigenvalues.png",
                     title=f"{args.graph_type} n={args.n_nodes} seed={seed}",
                 )
             except Exception as exc:
-                print(f"  WARNING: eigenvalue plot failed: {exc}")
+                logger.warning(f"  WARNING: eigenvalue plot failed: {exc}")
 
         # Basin stability scan
         rows = _run_basin_scan(
@@ -435,11 +521,21 @@ def main():
             n_workers=n_workers,
         )
 
-        csv_path = seed_dir / f"basin_{dynamics}_s{source}t{target}.csv"
+        csv_path = csv_dir / f"basin_{dynamics}_s{source}t{target}.csv"
         _write_csv(csv_path, rows, n_trials=args.n_trials, dynamics=dynamics)
-        print(f"  Wrote: {csv_path}\n")
+        logger.info(f"  Wrote: {csv_path}")
 
-    print("Done.")
+        basin_plot_path = plots_dir / f"basin_{dynamics}_s{source}t{target}_vs_k.png"
+        plot_basin_stability_vs_k(
+            K_values=[row["coupling_strength"] for row in rows],
+            basin_stabilities=[row["basin_stability"] for row in rows],
+            output_path=basin_plot_path,
+            n_trials=args.n_trials,
+            title=f"{args.graph_type} n={args.n_nodes} seed={seed} — {dynamics} s{source}t{target}",
+        )
+        logger.info(f"  Wrote: {basin_plot_path}\n")
+
+    logger.info("Done.")
     return 0
 
 
